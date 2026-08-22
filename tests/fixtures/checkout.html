@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Test Checkout</title></head>
+<body>
+  <h1>Cart</h1>
+  <div id="item">Representative Product — ₹1000</div>
+  <label>Coupon: <input id="coupon" name="coupon" placeholder="Enter coupon code"></label>
+  <button id="apply">Apply</button>
+  <div id="result"></div>
+
+  <script>
+    // Minimal, deterministic stand-in for a real merchant coupon field.
+    // Proves the BrowserValidator harness end-to-end without any live site.
+    document.getElementById('apply').addEventListener('click', function () {
+      var code = (document.getElementById('coupon').value || '').trim().toUpperCase();
+      var out = document.getElementById('result');
+      if (code === 'SAVE20') {
+        out.className = 'success';
+        out.textContent = 'Coupon applied — you saved ₹200 (20% discount applied)';
+      } else {
+        out.className = 'error';
+        out.textContent = 'Invalid coupon code. Please try again.';
+      }
+    });
+  </script>
+</body>
+</html>
