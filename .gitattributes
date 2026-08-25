@@ -5,3 +5,7 @@
 Procfile text eol=lf
 .python-version text eol=lf
 *.py text eol=lf
+Dockerfile text eol=lf
+Caddyfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf

@@ -1,0 +1,26 @@
+# Automatic HTTPS for all three names (Caddy provisions Let's Encrypt certs once
+# DNS points here and ports 80/443 are open).
+
+# www -> apex (301), keeps couponlive.in canonical.
+www.{$SITE_DOMAIN} {
+    redir https://{$SITE_DOMAIN}{uri} permanent
+}
+
+# The static frontend (Next.js `output: export`, trailingSlash: true).
+{$SITE_DOMAIN} {
+    encode gzip zstd
+    root * /srv/www
+    # Map pretty URLs to their exported index.html; fall back to the 404 page.
+    try_files {path} {path}index.html {path}.html /404.html
+    file_server
+    handle_errors {
+        rewrite * /404.html
+        file_server
+    }
+}
+
+# The API, reverse-proxied to the FastAPI container.
+{$API_DOMAIN} {
+    encode gzip
+    reverse_proxy api:8000
+}

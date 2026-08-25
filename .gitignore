@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 .env
+.env.vps
 .pytest_cache/
 *.egg-info/
 .DS_Store
+
+# Built frontend static files placed on the VPS for Caddy to serve
+/web/
