@@ -32,15 +32,23 @@ class _FakeSession:
         return _FakeResp(self.payload)
 
 
+# Mirrors the real INRDeals coupon-feed shape: result.data[], merchant nested
+# under logo.store_name, "label" = discount, "coupon_code" = the code.
 SAMPLE = {
-    "status": "success",
-    "data": [
-        {"id": "1001", "store": "Flipkart", "code": "FKNEW200",
-         "offer": "Flat ₹200 off on first order", "url": "https://track/1001"},
-        {"id": "1002", "store": "Myntra", "coupon_code": "MYNTRA20",
-         "title": "20% off on fashion", "discount_type": "percentage"},
-        {"id": "1003", "store": "SomeDeal", "offer": "Deal without a code"},  # dropped
-    ],
+    "result": {
+        "current_page": 1,
+        "data": [
+            {"id": 1001, "url": "https://inr.deals/track?...=flipkart",
+             "label": "Flat ₹200 OFF", "offer": "Flat ₹200 off on first order",
+             "coupon_code": "FKNEW200", "logo": {"id": 65, "store_name": "Flipkart"}},
+            {"id": 1002, "url": "https://inr.deals/track?...=myntra",
+             "label": "20% OFF", "offer": "20% off on fashion",
+             "coupon_code": "MYNTRA20", "logo": {"id": 193, "store_name": "Myntra"}},
+            {"id": 1003, "label": "Deal", "offer": "Deal without a code",
+             "coupon_code": "", "logo": {"id": 9, "store_name": "SomeDeal"}},  # dropped
+        ],
+        "next_page_url": None,
+    },
 }
 
 
@@ -79,7 +87,8 @@ def test_missing_credentials_raises():
 @pytest.mark.parametrize("payload,expected", [
     ([{"a": 1}], 1),
     ({"data": [{"a": 1}, {"b": 2}]}, 2),
-    ({"result": {"coupons": [{"a": 1}]}}, 1),   # nested envelope
+    ({"result": {"data": [{"a": 1}]}}, 1),       # real INRDeals shape
+    ({"result": {"coupons": [{"a": 1}]}}, 1),    # nested envelope
     ({"nope": 1}, 0),
 ])
 def test_extract_items_handles_envelopes(payload, expected):

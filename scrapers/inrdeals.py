@@ -89,28 +89,28 @@ class InrdealsIngestor(BaseScraper):
 
     # -- mapping -----------------------------------------------------------
     def _map_coupon(self, item: dict, fetched_at: datetime) -> RawCoupon | None:
-        merchant = _first(item, "store", "store_name", "merchant", "merchant_name", "title")
-        code = _first(item, "code", "coupon_code", "couponcode", "coupon")
-        offer = _first(item, "offer", "offer_title", "title", "name", "description", "details")
+        # INRDeals nests the merchant name under logo.store_name.
+        merchant = _first(item, "store", "store_name", "merchant", "merchant_name")
+        if not merchant:
+            logo = item.get("logo")
+            if isinstance(logo, dict):
+                merchant = _first(logo, "store_name", "name")
+
+        code = _first(item, "coupon_code", "code", "couponcode", "coupon")
         if not merchant or not code:
             return None  # a deal without a code isn't a coupon for our purposes
 
-        dtype_txt = str(offer or "") + " " + str(_first(item, "discount", "offer") or "")
-        dtype, dval = _parse_discount(dtype_txt)
-        # explicit discount fields override the text heuristic when present
-        if _first(item, "discount_type"):
-            raw_dt = str(item["discount_type"]).lower()
-            if "percent" in raw_dt or raw_dt in ("%", "percentage"):
-                dtype = DiscountType.percentage
-            elif "flat" in raw_dt or "fixed" in raw_dt or "amount" in raw_dt:
-                dtype = DiscountType.fixed
+        # "label" is the clean discount (e.g. "30% OFF"); "offer" is the title.
+        label = _first(item, "label")
+        offer = _first(item, "offer", "offer_title", "title", "name")
+        dtype, dval = _parse_discount(f"{label or ''} {offer or ''}")
 
         return RawCoupon(
             merchant_name=str(merchant).strip(),
             code=str(code).strip(),
             external_ref=str(_first(item, "id", "coupon_id", "cid") or "") or None,
             requires_reveal=False,               # affiliate feed gives the real code
-            description=str(offer).strip() if offer else None,
+            description=(str(offer).strip() if offer else str(label).strip() if label else None),
             discount_type=dtype,
             discount_value=dval,
             source_url=_first(item, "url", "affiliate_url", "tracking_url", "link"),
