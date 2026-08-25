@@ -1,0 +1,7 @@
+# Force LF for files that run on the Linux deploy host. CRLF here would break
+# the shell script / Procfile on Railway.
+* text=auto
+*.sh text eol=lf
+Procfile text eol=lf
+.python-version text eol=lf
+*.py text eol=lf
