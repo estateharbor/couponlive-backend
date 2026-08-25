@@ -8,6 +8,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0001_initial"
 down_revision: Union[str, None] = None
@@ -15,20 +16,21 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-# create_type=False: we create these enums explicitly (checkfirst) in upgrade();
-# without this flag, create_table() would ALSO emit CREATE TYPE and Postgres
-# rejects the duplicate ("type ... already exists").
-coupon_status = sa.Enum(
+# Use the PostgreSQL ENUM with create_type=False: we create these types ONCE,
+# explicitly (checkfirst) in upgrade(). On generic sa.Enum the create_type flag
+# is ignored, so create_table() re-emits CREATE TYPE and Postgres rejects the
+# duplicate ("type ... already exists"). postgresql.ENUM honors it.
+coupon_status = postgresql.ENUM(
     "unverified", "valid", "invalid", "expired", name="coupon_status", create_type=False
 )
-discount_type = sa.Enum(
+discount_type = postgresql.ENUM(
     "percentage", "fixed", "free_shipping", "bogo", "cashback", "unknown",
     name="discount_type", create_type=False,
 )
-validation_result = sa.Enum(
+validation_result = postgresql.ENUM(
     "valid", "invalid", "unverifiable", name="validation_result", create_type=False
 )
-ingestion_method = sa.Enum(
+ingestion_method = postgresql.ENUM(
     "affiliate_api", "scrape_requests", "scrape_playwright",
     name="ingestion_method", create_type=False,
 )
