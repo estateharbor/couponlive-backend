@@ -44,6 +44,8 @@ services:
   worker:
     build: .
     command: celery -A scheduler.celery_app worker --beat --loglevel=info --concurrency=2
+    healthcheck:
+      disable: true          # the worker doesn't serve /health (that's the API's check)
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}

@@ -15,18 +15,22 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# create_type=False: we create these enums explicitly (checkfirst) in upgrade();
+# without this flag, create_table() would ALSO emit CREATE TYPE and Postgres
+# rejects the duplicate ("type ... already exists").
 coupon_status = sa.Enum(
-    "unverified", "valid", "invalid", "expired", name="coupon_status"
+    "unverified", "valid", "invalid", "expired", name="coupon_status", create_type=False
 )
 discount_type = sa.Enum(
     "percentage", "fixed", "free_shipping", "bogo", "cashback", "unknown",
-    name="discount_type",
+    name="discount_type", create_type=False,
 )
 validation_result = sa.Enum(
-    "valid", "invalid", "unverifiable", name="validation_result"
+    "valid", "invalid", "unverifiable", name="validation_result", create_type=False
 )
 ingestion_method = sa.Enum(
-    "affiliate_api", "scrape_requests", "scrape_playwright", name="ingestion_method"
+    "affiliate_api", "scrape_requests", "scrape_playwright",
+    name="ingestion_method", create_type=False,
 )
 
 
