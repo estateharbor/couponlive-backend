@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -79,6 +79,32 @@ class Settings(BaseSettings):
     api_host: str = Field("0.0.0.0", alias="API_HOST")
     api_port: int = Field(8000, alias="API_PORT")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
+
+    # CORS: comma-separated origins allowed to call the API from a browser.
+    # The static frontend is served from a different origin, so it MUST be listed.
+    cors_origins: str = Field(
+        "https://couponlive.in,https://www.couponlive.in,http://localhost:3000",
+        alias="CORS_ORIGINS",
+    )
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalize_db_driver(cls, v: str) -> str:
+        """Managed hosts (Railway/Neon/Supabase) hand out `postgres://` or
+        `postgresql://` URLs; SQLAlchemy needs the psycopg3 driver spelled out.
+        Rewrite the scheme so the platform-provided URL works as-is."""
+        for prefix in ("postgresql+psycopg://", "postgresql+"):
+            if v.startswith(prefix):
+                return v  # already has an explicit driver
+        if v.startswith("postgres://"):
+            return "postgresql+psycopg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            return "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     @property
     def is_prod(self) -> bool:
