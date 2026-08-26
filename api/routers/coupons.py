@@ -5,7 +5,7 @@ import hashlib
 from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc, select
+from sqlalchemy import case, desc, select
 from sqlalchemy.orm import Session
 
 from core.config import get_settings
@@ -25,32 +25,49 @@ def list_coupons(
     db: Session = Depends(get_db),
     merchant: str | None = Query(None, description="Merchant name (fuzzy-normalized)"),
     status: CouponStatus = Query(CouponStatus.valid),
+    listing: bool = Query(
+        False,
+        description="Directory mode: usable codes (valid + unverified), verified-first. "
+        "Each carries its true status so the client badges honestly.",
+    ),
     include_stale: bool = Query(False, description="Bypass the freshness filter"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
-    """Default: `status=valid` AND validated within the freshness window,
-    ordered by confidence then recency — i.e. only codes we currently trust."""
+    """Default: `status=valid` AND validated within the freshness window (only
+    codes we've actually verified). `listing=true` returns the honest directory
+    — real, usable codes whether or not they've been checkout-verified yet —
+    each with its real status, so the UI shows "Verified" only for tested ones."""
     settings = get_settings()
-    stmt = select(Coupon).join(Merchant).where(Coupon.status == status)
+    stmt = select(Coupon).join(Merchant)
 
     if merchant:
-        key = normalize_merchant_name(merchant)
-        stmt = stmt.where(Merchant.normalized_name == key)
+        stmt = stmt.where(Merchant.normalized_name == normalize_merchant_name(merchant))
 
-    # Freshness filter only makes sense for "valid"; opt out with include_stale.
-    if status is CouponStatus.valid and not include_stale:
-        fresh_cutoff = utcnow() - timedelta(hours=settings.serve_freshness_hours)
+    if listing:
+        # Usable codes people can actually try: exclude invalid/expired; verified
+        # ones surface first, then the freshest unverified.
         stmt = stmt.where(
-            Coupon.last_validated_at.is_not(None),
-            Coupon.last_validated_at >= fresh_cutoff,
+            Coupon.code.is_not(None),
+            Coupon.status.in_([CouponStatus.valid, CouponStatus.unverified]),
+        ).order_by(
+            case((Coupon.status == CouponStatus.valid, 0), else_=1),
+            desc(Coupon.confidence_score),
+            desc(Coupon.last_seen),
+        )
+    else:
+        stmt = stmt.where(Coupon.status == status)
+        if status is CouponStatus.valid and not include_stale:
+            fresh_cutoff = utcnow() - timedelta(hours=settings.serve_freshness_hours)
+            stmt = stmt.where(
+                Coupon.last_validated_at.is_not(None),
+                Coupon.last_validated_at >= fresh_cutoff,
+            )
+        stmt = stmt.order_by(
+            desc(Coupon.confidence_score), desc(Coupon.last_validated_at), desc(Coupon.last_seen)
         )
 
-    stmt = stmt.order_by(
-        desc(Coupon.confidence_score), desc(Coupon.last_validated_at), desc(Coupon.last_seen)
-    ).limit(limit).offset(offset)
-
-    coupons = db.scalars(stmt).all()
+    coupons = db.scalars(stmt.limit(limit).offset(offset)).all()
     return [_to_out(c) for c in coupons]
 
 

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from api.deps import get_db
 from api.main import create_app
@@ -69,6 +70,24 @@ def test_filter_by_merchant(client):
 def test_filter_by_status_invalid(client):
     r = client.get("/coupons", params={"status": "invalid"})
     assert [c["code"] for c in r.json()] == ["BADCODE"]
+
+
+def test_listing_mode_directory(client, db_session):
+    from models.models import Coupon, Merchant
+    m = db_session.scalar(select(Merchant).where(Merchant.normalized_name == "myntra"))
+    db_session.add(Coupon(merchant_id=m.id, code="NEWCODE", status=CouponStatus.unverified,
+                          confidence_score=0.0, first_seen=_now(), last_seen=_now()))
+    db_session.commit()
+
+    rows = client.get("/coupons", params={"listing": True}).json()
+    codes = [c["code"] for c in rows]
+    assert "NEWCODE" in codes                       # unverified real codes ARE shown
+    assert "BADCODE" not in codes                   # invalid excluded
+    assert codes.index("FRESH20") < codes.index("NEWCODE")  # verified surface first
+
+    by_code = {c["code"]: c for c in rows}
+    assert by_code["FRESH20"]["status"] == "valid"        # true status carried through
+    assert by_code["NEWCODE"]["status"] == "unverified"   # ...for honest badging
 
 
 def test_merchants_counts(client):
