@@ -37,6 +37,7 @@ from core.logging import get_logger
 from models.enums import DiscountType, IngestionMethod
 from models.schemas import RawCoupon
 from scrapers.base import BaseScraper
+from scrapers.desidime import _parse_discount  # reuse the "50% off" / "₹200 off" heuristic
 
 log = get_logger("ingest.linkmydeals")
 
@@ -103,18 +104,23 @@ def _num(text: Any) -> float | None:
     return float(m.group(1)) if m else None
 
 
-def _map_discount(offer_type: Any, offer_value: Any) -> tuple[DiscountType, float | None]:
-    dtype = DiscountType.unknown
-    if offer_type:
-        key = str(offer_type).strip().lower()
+def _map_discount(
+    offer_label: Any, text: str, offer_value: Any
+) -> tuple[DiscountType, float | None]:
+    """LinkMyDeals' `offer_value` is a text label (e.g. "Sign-Up Offer"), NOT a
+    number — the real discount lives in `offer_text`/`title`. So parse value +
+    type from that text, then refine the TYPE from the structured `offer` label
+    when it's specific (Percentage Off / Price Off / Cashback / BOGO / …)."""
+    dtype, dval = _parse_discount(text or "")
+    if offer_label:
+        key = str(offer_label).strip().lower()
         for needle, dt in _OFFER_TYPE_MAP.items():
             if needle in key:
                 dtype = dt
                 break
-    # % sign in the value strongly implies percentage even if type is vague.
-    if dtype is DiscountType.unknown and offer_value and "%" in str(offer_value):
-        dtype = DiscountType.percentage
-    return dtype, _num(offer_value)
+    if dval is None and offer_value is not None:
+        dval = _num(offer_value)  # last-resort fallback if a number is there
+    return dtype, dval
 
 
 class LinkMyDealsFeedScraper(BaseScraper):
@@ -145,20 +151,22 @@ class LinkMyDealsFeedScraper(BaseScraper):
         if not merchant or external_ref in (None, ""):
             return None  # no stable identity -> skip rather than create junk
 
-        title = _first(item, "title", "offer_text", "long_offer", "offer_name")
-        offer_type = _first(item, "offer", "offer_type", "type_of_offer")
+        offer_text = _first(item, "offer_text", "long_offer", "offer_name")
+        title = _first(item, "title")
+        offer_label = _first(item, "offer", "offer_type")
         offer_value = _first(item, "offer_value", "value", "discount")
-        dtype, dval = _map_discount(offer_type, offer_value)
+        dtype, dval = _map_discount(offer_label, f"{offer_text or ''} {title or ''}", offer_value)
 
-        # Prefer the affiliate deeplink (smartlink), else the plain landing URL.
+        # Prefer the affiliate deeplink (smartLink), else the plain landing URL.
         url = _first(item, "smartlink", "smartLink", "affiliate_link", "url", "deeplink")
+        description = title or offer_text
 
         return RawCoupon(
             merchant_name=str(merchant).strip(),
             code=str(code).strip() if code else None,
             external_ref=str(external_ref).strip(),
             requires_reveal=False,               # feed gives the real code
-            description=str(title).strip() if title else None,
+            description=str(description).strip() if description else None,
             discount_type=dtype,
             discount_value=dval,
             source_url=str(url).strip() if url else None,

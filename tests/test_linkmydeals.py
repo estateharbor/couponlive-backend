@@ -43,18 +43,22 @@ class _FakeSession:
         return _FakeResp(self.payload)
 
 
+# Real LinkMyDeals shape: discount is in `offer_text`, `offer_value` is a text
+# LABEL (not a number), affiliate deeplink is `smartLink`, status "active".
 SAMPLE = {
     "offers": [
-        {"lmd_id": 111, "store": "Amazon India", "title": "50% Off Electronics",
-         "code": "SAVE50", "offer": "Percentage Off", "offer_value": "50%",
-         "type": "Code", "smartlink": "https://track/111", "status": "new"},
-        {"lmd_id": 222, "store": "Flipkart", "title": "Flat ₹200 Off",
-         "code": "FLAT200", "offer": "Price Off", "offer_value": "₹200",
-         "type": "Code", "url": "https://track/222", "status": "updated"},
-        {"lmd_id": 333, "store": "Myntra", "title": "Free Shipping",
-         "code": "", "offer": "Free Shipping", "offer_value": "",
-         "type": "Deal", "smartlink": "https://track/333"},   # code-less deal, kept
-        {"lmd_id": 444, "store": "Nykaa", "code": "OLD10", "status": "suspended"},
+        {"lmd_id": "111", "store": "Amazon India", "offer_text": "Get 50% Off on Electronics",
+         "title": "50% Off", "code": "SAVE50", "offer": "Percentage Off",
+         "offer_value": "Percentage Off", "type": "Code",
+         "smartLink": "https://track/111", "status": "active"},
+        {"lmd_id": "222", "store": "Flipkart", "offer_text": "Flat ₹200 Off on first order",
+         "title": "₹200 Off", "code": "FLAT200", "offer": "Price Off",
+         "offer_value": "Price Off", "type": "Code",
+         "url": "https://track/222", "status": "active"},
+        {"lmd_id": "333", "store": "Myntra", "offer_text": "Free Shipping on all orders",
+         "title": "Free Shipping", "code": "", "offer": "Free Shipping",
+         "type": "Deal", "smartLink": "https://track/333", "status": "active"},
+        {"lmd_id": "444", "store": "Nykaa", "code": "OLD10", "status": "suspended"},
     ],
 }
 
