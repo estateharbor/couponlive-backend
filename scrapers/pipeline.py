@@ -125,10 +125,11 @@ def _upsert_coupon(
         # REFRESH from it (self-heals rows created from an earlier/looser mapping);
         # other sources only fill gaps.
         if source.ingestion_method is IngestionMethod.affiliate_api:
-            if nc.discount_type is not DiscountType.unknown:
-                coupon.discount_type = nc.discount_type
-            if nc.discount_value is not None:
-                coupon.discount_value = nc.discount_value
+            # The feed is authoritative for its own offers: set discount_type and
+            # discount_value from the current read even when unknown/None, so a
+            # stale value from an earlier/looser mapping is CLEARED, not retained.
+            coupon.discount_type = nc.discount_type
+            coupon.discount_value = nc.discount_value
         elif coupon.discount_value is None and nc.discount_value is not None:
             coupon.discount_value = nc.discount_value
         summary.coupons_updated += 1

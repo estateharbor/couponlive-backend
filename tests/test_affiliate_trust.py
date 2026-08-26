@@ -46,6 +46,25 @@ def test_affiliate_codeless_deal_stays_unverified(db_session):
     assert c.status is CouponStatus.unverified       # a code-less deal isn't a "code"
 
 
+def test_affiliate_resync_clears_stale_discount(db_session):
+    m = Merchant(name="Firstcry", normalized_name="firstcry")
+    db_session.add(m); db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add(Coupon(merchant_id=m.id, code="FCRY500", external_ref="7",
+                          discount_type=DiscountType.unknown, discount_value=8377.0,
+                          status=CouponStatus.valid, confidence_score=0.7,
+                          first_seen=now, last_seen=now))
+    db_session.commit()
+
+    # Feed re-reads it with no parseable discount -> the stale 8377 must be cleared.
+    ingest_raw(db_session, "LinkMyDeals", [_rc(
+        merchant_name="Firstcry", code="FCRY500", external_ref="7",
+        discount_type=DiscountType.unknown, discount_value=None,
+        ingestion_method=IngestionMethod.affiliate_api)])
+    c = db_session.scalar(select(Coupon).where(Coupon.code == "FCRY500"))
+    assert c.discount_value is None
+
+
 def test_affiliate_does_not_override_invalid(db_session):
     m = Merchant(name="Box8", normalized_name="box8")
     db_session.add(m); db_session.flush()
