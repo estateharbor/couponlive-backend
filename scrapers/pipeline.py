@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from core.alerting import alert_scrape_result
 from core.logging import get_logger
 from models.base import utcnow
-from models.enums import CouponStatus, IngestionMethod
+from models.enums import CouponStatus, DiscountType, IngestionMethod
 from models.models import Coupon, CouponSource, Merchant, Source
 from models.schemas import RawCoupon
 from scrapers.normalize import (
@@ -120,7 +120,15 @@ def _upsert_coupon(
         coupon.last_seen = max(_aware(coupon.last_seen), _aware(nc.last_seen))
         if not coupon.description and nc.description:
             coupon.description = nc.description
-        if coupon.discount_value is None and nc.discount_value is not None:
+        # Discount info: an affiliate feed is authoritative for its own offers, so
+        # REFRESH from it (self-heals rows created from an earlier/looser mapping);
+        # other sources only fill gaps.
+        if source.ingestion_method is IngestionMethod.affiliate_api:
+            if nc.discount_type is not DiscountType.unknown:
+                coupon.discount_type = nc.discount_type
+            if nc.discount_value is not None:
+                coupon.discount_value = nc.discount_value
+        elif coupon.discount_value is None and nc.discount_value is not None:
             coupon.discount_value = nc.discount_value
         summary.coupons_updated += 1
 
