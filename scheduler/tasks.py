@@ -34,10 +34,12 @@ def scrape_source(source_name: str) -> dict:
         scraper = get_scraper(source_name)
         raw = scraper.scrape()
         summary = ingest_raw(session, source_name, raw)
-        # After ingest, enqueue validation for brand-new codes at top priority.
-        for _prio, coupon in select_coupons_to_validate(session, limit=200):
-            if coupon.last_validated_at is None:
-                validate_coupon.apply_async(args=[coupon.id], priority=0)
+        # After ingest, enqueue validation for brand-new codes at top priority
+        # (only when checkout validation is explicitly enabled).
+        if get_settings().validation_enabled:
+            for _prio, coupon in select_coupons_to_validate(session, limit=200):
+                if coupon.last_validated_at is None:
+                    validate_coupon.apply_async(args=[coupon.id], priority=0)
         return {"source": source_name, "created": summary.coupons_created,
                 "deduped": summary.deduped_count}
     finally:
@@ -78,10 +80,12 @@ def sync_linkmydeals() -> dict:
             source.sync_cursor = str(run_ts)
             session.commit()
 
-        # New codes still go through checkout validation like any other source.
-        for _prio, coupon in select_coupons_to_validate(session, limit=500):
-            if coupon.last_validated_at is None:
-                validate_coupon.apply_async(args=[coupon.id], priority=0)
+        # New codes still go through checkout validation like any other source
+        # (when it's enabled — otherwise affiliate-trust already made them valid).
+        if get_settings().validation_enabled:
+            for _prio, coupon in select_coupons_to_validate(session, limit=500):
+                if coupon.last_validated_at is None:
+                    validate_coupon.apply_async(args=[coupon.id], priority=0)
 
         return {"source": "LinkMyDeals", "created": summary.coupons_created,
                 "updated": summary.coupons_updated, "expired": expired,
@@ -94,6 +98,8 @@ def sync_linkmydeals() -> dict:
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
 
+    if not get_settings().validation_enabled:
+        return {"coupon_id": coupon_id, "skipped": "validation disabled"}
     session = get_sessionmaker()()
     try:
         coupon = session.get(Coupon, coupon_id)
@@ -135,6 +141,8 @@ def check_source_health_task() -> dict:
 @celery_app.task(name="enqueue_revalidations")
 def enqueue_revalidations() -> dict:
     """Beat task: dispatch due re-validations (top-merchant + stale)."""
+    if not get_settings().validation_enabled:
+        return {"dispatched": 0, "skipped": "validation disabled"}
     session = get_sessionmaker()()
     try:
         dispatched = 0

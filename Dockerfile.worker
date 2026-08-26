@@ -1,0 +1,17 @@
+# Optional worker image for when checkout VALIDATION is enabled.
+# The default worker uses the slim `Dockerfile` (no browser) since validation is
+# off by default. To turn validation on, point the `worker` service at this file
+# in docker-compose (build.dockerfile: Dockerfile.worker) and set
+# VALIDATION_ENABLED=true. This base ships Chromium + all its OS deps, so there's
+# no `playwright install` step.
+FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["celery", "-A", "scheduler.celery_app", "worker", "--beat", "--loglevel=info", "--concurrency=2"]

@@ -52,3 +52,34 @@ decision to pursue evasion, is an explicit separate decision, not a default.
 A lower-risk alternative for much of this: validate via the **affiliate feed's**
 own coupon status/expiry (INRDeals returns codes with metadata) and crowd
 feedback, reserving browser validation for spot-checks on top merchants.
+
+## Trusted affiliate feeds (default — no browser needed)
+
+Code-bearing coupons from **authorized affiliate feeds** (e.g. LinkMyDeals) are
+shown as `valid` immediately with a *trusted-feed* confidence
+(`AFFILIATE_TRUST_CONFIDENCE`, default 0.7 — below the 0.85 checkout-verified
+prior), and expired instantly when the feed reports a suspension. This surfaces
+real codes on the site without running any bots. See
+`scrapers/pipeline._apply_affiliate_trust`.
+
+## Enabling checkout validation (opt-in, applies to the 5 built merchants)
+
+Validation is **off by default** and gated by `VALIDATION_ENABLED`; nothing
+dispatches a browser check until you turn it on. It only affects the merchants
+with a validator (Myntra/Amazon/Flipkart/Ajio/Nykaa) — long-tail affiliate
+merchants rely on trusted-feed status above.
+
+To enable (in your own authorized environment, after tuning selectors):
+1. Point the `worker` service at the Playwright image — in `docker-compose.yml`:
+   ```yaml
+   worker:
+     build: { context: ., dockerfile: Dockerfile.worker }
+   ```
+2. Set `VALIDATION_ENABLED=true` in `.env`.
+3. **Tune the merchant selectors** (`validators/merchants/*.py`) against a live
+   authenticated session — most coupon fields need login + a non-empty cart.
+4. `docker compose up -d --build worker`.
+
+⚠️ This drives automated checkout actions against real retailers — the ToS /
+bot-detection risk in the register above. Run at low volume, on the
+re-validation cadence, never in tight loops.
