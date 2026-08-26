@@ -25,6 +25,7 @@ likely key names) — confirm against the first live pull and tighten if needed.
 """
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -113,7 +114,8 @@ def _map_discount(
     when it's specific (Percentage Off / Price Off / Cashback / BOGO / …)."""
     dtype, dval = _parse_discount(text or "")
     if offer_label:
-        key = str(offer_label).strip().lower()
+        # normalize "Price-Off"/"Percentage-Off" (hyphen) -> "price off" etc.
+        key = str(offer_label).strip().lower().replace("-", " ")
         for needle, dt in _OFFER_TYPE_MAP.items():
             if needle in key:
                 dtype = dt
@@ -151,15 +153,17 @@ class LinkMyDealsFeedScraper(BaseScraper):
         if not merchant or external_ref in (None, ""):
             return None  # no stable identity -> skip rather than create junk
 
-        offer_text = _first(item, "offer_text", "long_offer", "offer_name")
-        title = _first(item, "title")
+        # LinkMyDeals HTML-encodes symbols (e.g. "&#8377;" == ₹, whose digits are
+        # literally 8377) — decode BEFORE parsing so the ₹ amount, not "8377", wins.
+        offer_text = html.unescape(str(_first(item, "offer_text", "long_offer", "offer_name") or ""))
+        title = html.unescape(str(_first(item, "title") or ""))
         offer_label = _first(item, "offer", "offer_type")
-        offer_value = _first(item, "offer_value", "value", "discount")
-        dtype, dval = _map_discount(offer_label, f"{offer_text or ''} {title or ''}", offer_value)
+        offer_value = html.unescape(str(_first(item, "offer_value", "value", "discount") or ""))
+        dtype, dval = _map_discount(offer_label, f"{offer_text} {title}", offer_value)
 
         # Prefer the affiliate deeplink (smartLink), else the plain landing URL.
         url = _first(item, "smartlink", "smartLink", "affiliate_link", "url", "deeplink")
-        description = title or offer_text
+        description = title or offer_text or None
 
         return RawCoupon(
             merchant_name=str(merchant).strip(),

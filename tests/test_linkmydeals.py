@@ -88,6 +88,20 @@ def test_maps_active_offers_and_splits_suspended():
     assert deal.discount_type is DiscountType.free_shipping
 
 
+def test_html_entities_and_hyphen_offer_label():
+    # "&#8377;" is HTML for ₹ (digits 8377); "Price-Off" is hyphenated. Must map
+    # to fixed/500, NOT unknown/8377.
+    s = LinkMyDealsFeedScraper(api_key="k")
+    from datetime import datetime, timezone
+    item = {"lmd_id": "7", "store": "firstcry.com", "code": "FCRY500SW",
+            "offer": "Price-Off", "offer_value": "&#8377;500",
+            "offer_text": "Get Flat &#8377;500 OFF on most products",
+            "title": "Avail &#8377;500 discount", "status": "active"}
+    rc = s._map_response(item, datetime.now(timezone.utc))
+    assert rc.discount_type is DiscountType.fixed
+    assert rc.discount_value == 500 and rc.discount_value != 8377
+
+
 def test_suspended_offer_captured():
     s = LinkMyDealsFeedScraper(api_key="k", session=_FakeSession(SAMPLE))
     s.scrape()
