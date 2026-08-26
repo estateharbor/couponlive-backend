@@ -14,10 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from core.alerting import alert_scrape_result
-from core.config import get_settings
 from core.logging import get_logger
 from models.base import utcnow
-from models.enums import CouponStatus, DiscountType, IngestionMethod
+from models.enums import CouponStatus, IngestionMethod
 from models.models import Coupon, CouponSource, Merchant, Source
 from models.schemas import RawCoupon
 from scrapers.normalize import (
@@ -134,34 +133,12 @@ def _upsert_coupon(
             coupon.discount_value = nc.discount_value
         summary.coupons_updated += 1
 
-    _apply_affiliate_trust(coupon, nc, source)
+    # No source-specific trust: coupons from every source (affiliate feeds
+    # included) land as `unverified` and must earn `valid` via the real
+    # validation worker — see scheduler/validation.py. The only immediate status
+    # change we allow is the *negative* suspended -> expired signal (see
+    # expire_suspended), which fails safe.
     _upsert_provenance(session, source, coupon, nc, summary)
-
-
-def _apply_affiliate_trust(coupon: Coupon, nc: NormalizedCoupon, source: Source) -> None:
-    """Affiliate feeds (LinkMyDeals etc.) are authorized, continuously-refreshed
-    sources, so we surface their code-bearing coupons immediately as `valid` with
-    a *trusted-feed* confidence — instead of leaving them `unverified` until a
-    checkout validation that may never run for a long-tail merchant.
-
-    Boundaries:
-    - Only affiliate_api sources, only coupons that actually carry a code.
-    - Never overrides `invalid`/`expired` (the validator or a supplier suspension
-      owns those) — we only promote from `unverified`.
-    - Keeps the coupon "fresh" while the feed still lists it (last_validated_at =
-      last_seen), so it stays in the default served set between syncs.
-    - Confidence stays below the checkout-verified prior (0.85); a real Playwright
-      validation later raises it.
-    """
-    settings = get_settings()
-    if source.ingestion_method is not IngestionMethod.affiliate_api or not nc.code:
-        return
-    if coupon.status is CouponStatus.unverified:
-        coupon.status = CouponStatus.valid
-        if coupon.confidence_score < settings.affiliate_trust_confidence:
-            coupon.confidence_score = settings.affiliate_trust_confidence
-    if coupon.status is CouponStatus.valid:
-        coupon.last_validated_at = _aware(nc.last_seen)
 
 
 def _upsert_provenance(

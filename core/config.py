@@ -49,9 +49,6 @@ class Settings(BaseSettings):
         4, alias="VALIDATE_TOP_MERCHANT_REVALIDATE_HOURS"
     )
     validation_enabled: bool = Field(False, alias="VALIDATION_ENABLED")
-    # Confidence prior for code-bearing coupons from authorized affiliate feeds
-    # (shown as valid immediately; below the checkout-verified prior of 0.85).
-    affiliate_trust_confidence: float = Field(0.7, alias="AFFILIATE_TRUST_CONFIDENCE")
 
     # Freshness / staleness policy
     serve_freshness_hours: int = Field(4, alias="SERVE_FRESHNESS_HOURS")

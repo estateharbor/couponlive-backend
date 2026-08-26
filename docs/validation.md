@@ -53,14 +53,21 @@ A lower-risk alternative for much of this: validate via the **affiliate feed's**
 own coupon status/expiry (INRDeals returns codes with metadata) and crowd
 feedback, reserving browser validation for spot-checks on top merchants.
 
-## Trusted affiliate feeds (default — no browser needed)
+## One honest bar for "valid" (no source-specific trust)
 
-Code-bearing coupons from **authorized affiliate feeds** (e.g. LinkMyDeals) are
-shown as `valid` immediately with a *trusted-feed* confidence
-(`AFFILIATE_TRUST_CONFIDENCE`, default 0.7 — below the 0.85 checkout-verified
-prior), and expired instantly when the feed reports a suspension. This surfaces
-real codes on the site without running any bots. See
-`scrapers/pipeline._apply_affiliate_trust`.
+A coupon is `valid` **only after our validation worker checkout-tests it** — the
+same bar for every source, affiliate feeds included. Feed coupons land
+`unverified` like any scraped coupon and enter the real validation queue; they do
+**not** get a "trusted-feed" status or a static confidence. (An earlier
+`_apply_affiliate_trust` shortcut that marked affiliate coupons valid at 0.7 was
+removed — it showed untested codes under the same "✓ Verified" badge as tested
+ones, which misleads users.) Confidence is always computed from validation
+results + crowd feedback (`core/confidence.py`), never a per-source constant.
+
+The one immediate status change we allow is the **negative** signal: a supplier
+`suspended` offer → `status=expired` right away (see `expire_suspended`). That
+fails safe (worst case we hide a coupon that was actually fine); the positive
+"mark untested as valid" direction does not, which is why only this one remains.
 
 ## Enabling checkout validation (opt-in, applies to the 5 built merchants)
 
