@@ -19,7 +19,12 @@ from models.base import utcnow
 from models.enums import CouponStatus, IngestionMethod
 from models.models import Coupon, CouponSource, Merchant, Source
 from models.schemas import RawCoupon
-from scrapers.normalize import NormalizedCoupon, normalize_and_dedupe
+from scrapers.normalize import (
+    NormalizedCoupon,
+    normalize_and_dedupe,
+    normalize_code,
+    normalize_merchant_name,
+)
 
 log = get_logger("ingest")
 
@@ -198,3 +203,43 @@ def ingest_raw(
         errors=len(summary.errors),
     )
     return summary
+
+
+def expire_suspended(session: Session, suspended, *, commit: bool = True) -> int:
+    """Mark coupons expired for supplier 'suspended' signals (e.g. LinkMyDeals).
+
+    A supplier suspension is a stronger signal than our own validator, so we
+    flip status to `expired` immediately rather than waiting for a checkout
+    validation. `suspended` items expose `.merchant_name`, `.code`,
+    `.external_ref`. Match by (merchant, code) when a code exists, else by
+    (merchant, external_ref). Returns the number expired.
+    """
+    expired = 0
+    for s in suspended:
+        nmerchant = normalize_merchant_name(s.merchant_name)
+        if not nmerchant:
+            continue
+        merchant = session.scalar(
+            select(Merchant).where(Merchant.normalized_name == nmerchant)
+        )
+        if merchant is None:
+            continue
+
+        stmt = select(Coupon).where(Coupon.merchant_id == merchant.id)
+        code = normalize_code(s.code)
+        if code:
+            stmt = stmt.where(Coupon.code == code)
+        elif s.external_ref:
+            stmt = stmt.where(Coupon.code.is_(None), Coupon.external_ref == str(s.external_ref))
+        else:
+            continue
+
+        for coupon in session.scalars(stmt):
+            if coupon.status is not CouponStatus.expired:
+                coupon.status = CouponStatus.expired
+                expired += 1
+
+    if commit:
+        session.commit()
+    log.info("expire_suspended.done", suspended=len(list(suspended)), expired=expired)
+    return expired

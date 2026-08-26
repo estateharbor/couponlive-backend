@@ -82,6 +82,9 @@ class Source(Base, TimestampMixin):
     last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Rolling health signal for Phase 6 alerting (0.0–1.0).
     last_success_rate: Mapped[float | None] = mapped_column(Float)
+    # Incremental-feed cursor (e.g. LinkMyDeals last_extract unix timestamp).
+    # Stored as text to stay source-agnostic; None => next run is a full pull.
+    sync_cursor: Mapped[str | None] = mapped_column(String(64))
 
     coupon_links: Mapped[list["CouponSource"]] = relationship(
         back_populates="source", cascade="all, delete-orphan"

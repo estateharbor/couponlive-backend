@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     admitad_client_secret: str = Field("", alias="ADMITAD_CLIENT_SECRET")
     vcommission_api_key: str = Field("", alias="VCOMMISSION_API_KEY")
 
+    # LinkMyDeals coupon-feed API (structured coupon aggregator)
+    linkmydeals_api_url: str = Field(
+        "https://feed.linkmydeals.com/getOffers/", alias="LINKMYDEALS_API_URL"
+    )
+    linkmydeals_api_key: str = Field("", alias="LINKMYDEALS_API_KEY")
+    linkmydeals_sync_frequency_minutes: int = Field(
+        30, alias="LINKMYDEALS_SYNC_FREQUENCY_MINUTES"
+    )
+
     # Alerting
     alert_webhook_url: str = Field("", alias="ALERT_WEBHOOK_URL")
     alert_min_success_rate: float = Field(0.5, alias="ALERT_MIN_SUCCESS_RATE")

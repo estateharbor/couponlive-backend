@@ -10,13 +10,17 @@ scheduler.validation, so it stays unit-testable without a broker.
 """
 from __future__ import annotations
 
-from celery.schedules import crontab
+from datetime import timedelta
 
+from celery.schedules import crontab
+from sqlalchemy import select
+
+from core.config import get_settings
 from core.logging import get_logger
 from models.base import get_sessionmaker
 from scheduler.celery_app import celery_app
 from scheduler.validation import record_validation_result, select_coupons_to_validate
-from scrapers.pipeline import ingest_raw
+from scrapers.pipeline import expire_suspended, ingest_raw
 from scrapers.registry import get_scraper
 from validators.registry import get_validator
 
@@ -36,6 +40,52 @@ def scrape_source(source_name: str) -> dict:
                 validate_coupon.apply_async(args=[coupon.id], priority=0)
         return {"source": source_name, "created": summary.coupons_created,
                 "deduped": summary.deduped_count}
+    finally:
+        session.close()
+
+
+@celery_app.task(name="sync_linkmydeals")
+def sync_linkmydeals() -> dict:
+    """Incremental LinkMyDeals sync: new/updated -> pipeline; suspended -> expired.
+
+    Reads/advances the persisted cursor (sources.sync_cursor). The run timestamp
+    is captured BEFORE the pull so offers changed mid-pull aren't missed next time.
+    """
+    import time
+
+    from models.models import Source
+    from scrapers.linkmydeals_feed import LinkMyDealsFeedScraper, MissingCredentials
+
+    session = get_sessionmaker()()
+    try:
+        source = session.scalar(select(Source).where(Source.name == "LinkMyDeals"))
+        cursor = source.sync_cursor if source else None
+        run_ts = int(time.time())
+
+        scraper = LinkMyDealsFeedScraper(last_extract=int(cursor) if cursor else None)
+        try:
+            active = scraper.scrape()
+        except MissingCredentials as exc:
+            log.warning("linkmydeals.skipped", reason=str(exc))
+            return {"source": "LinkMyDeals", "skipped": "no api key"}
+
+        summary = ingest_raw(session, "LinkMyDeals", active)
+        expired = expire_suspended(session, scraper.suspended)
+
+        # Advance the cursor so the next run pulls incrementally.
+        source = session.scalar(select(Source).where(Source.name == "LinkMyDeals"))
+        if source is not None:
+            source.sync_cursor = str(run_ts)
+            session.commit()
+
+        # New codes still go through checkout validation like any other source.
+        for _prio, coupon in select_coupons_to_validate(session, limit=500):
+            if coupon.last_validated_at is None:
+                validate_coupon.apply_async(args=[coupon.id], priority=0)
+
+        return {"source": "LinkMyDeals", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "expired": expired,
+                "incremental": bool(cursor)}
     finally:
         session.close()
 
@@ -119,5 +169,10 @@ celery_app.conf.beat_schedule = {
     "check-source-health": {
         "task": "check_source_health",
         "schedule": crontab(minute="*/30"),
+    },
+    # LinkMyDeals incremental feed sync (API call — runs on its own cadence).
+    "sync-linkmydeals": {
+        "task": "sync_linkmydeals",
+        "schedule": timedelta(minutes=get_settings().linkmydeals_sync_frequency_minutes),
     },
 }
