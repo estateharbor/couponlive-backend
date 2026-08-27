@@ -118,7 +118,13 @@ def _upsert_coupon(
         # Keep earliest first_seen, advance last_seen, backfill missing fields.
         coupon.first_seen = min(_aware(coupon.first_seen), _aware(nc.first_seen))
         coupon.last_seen = max(_aware(coupon.last_seen), _aware(nc.last_seen))
-        if not coupon.description and nc.description:
+        # Description: other sources fill only gaps; an affiliate feed is
+        # authoritative, so refresh it (heals stale HTML-encoded text like
+        # "&#8377;500" that predates the html.unescape mapping).
+        if nc.description and (
+            not coupon.description
+            or source.ingestion_method is IngestionMethod.affiliate_api
+        ):
             coupon.description = nc.description
         # Discount info: an affiliate feed is authoritative for its own offers, so
         # REFRESH from it (self-heals rows created from an earlier/looser mapping);
