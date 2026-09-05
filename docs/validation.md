@@ -69,23 +69,52 @@ The one immediate status change we allow is the **negative** signal: a supplier
 fails safe (worst case we hide a coupon that was actually fine); the positive
 "mark untested as valid" direction does not, which is why only this one remains.
 
-## Enabling checkout validation (opt-in, applies to the 5 built merchants)
+## Shopify guest-checkout validator (the live pilot — no login)
+
+The big marketplaces above all gate the coupon field behind login, which makes
+them poor first targets. **Shopify** does not: its hosted checkout is uniform
+across every store it powers and exposes a guest **"Discount code or gift card"**
+field with no sign-in. That makes one validator — `validators/merchants/shopify.py`
+`ShopifyCheckoutValidator` — cover *every* Shopify merchant in the feed:
+
+1. `GET /products.json` → pick an in-stock variant (no HTML scraping).
+2. `GET /cart/<variant>:1` → Shopify seeds the cart and redirects into guest checkout.
+3. Fill `input[name="reductions"]`, click **Apply**.
+4. Classify: an inline **error** (`"Enter a valid discount code…"`, `"isn't valid"`,
+   `"expired"`) → **INVALID**; an applied-discount tag / reduced total with no
+   error → **VALID**; anything ambiguous → **UNVERIFIABLE** (fails safe).
+
+Confirmed live against **fuaark.com** (2026-09): a bad code surfaces its error via
+the discount input's `aria-describedby`. Stores are registered in `SHOPIFY_STORES`
+(keyed by normalized merchant name → base URL); add a merchant only after
+confirming its storefront is Shopify. Classifier is unit-tested offline in
+`tests/test_shopify_validator.py` (the safety property: a rejection can never read
+as valid).
+
+Pilot scope: **fuaark** only. The marketplace configs (Myntra/Amazon/Flipkart/
+Ajio/Nykaa) remain placeholders needing login + selector tuning.
+
+## Enabling checkout validation (opt-in)
 
 Validation is **off by default** and gated by `VALIDATION_ENABLED`; nothing
-dispatches a browser check until you turn it on. It only affects the merchants
-with a validator (Myntra/Amazon/Flipkart/Ajio/Nykaa) — long-tail affiliate
-merchants rely on trusted-feed status above.
+dispatches a browser check until you turn it on, and only merchants with a
+registered validator are ever checked (everything else stays `unverified` in the
+honest directory).
 
-To enable (in your own authorized environment, after tuning selectors):
-1. Point the `worker` service at the Playwright image — in `docker-compose.yml`:
+To enable (in your own authorized environment):
+1. Point the `worker` service at the Playwright image — already wired in
+   `docker-compose.yml`:
    ```yaml
    worker:
      build: { context: ., dockerfile: Dockerfile.worker }
    ```
 2. Set `VALIDATION_ENABLED=true` in `.env`.
-3. **Tune the merchant selectors** (`validators/merchants/*.py`) against a live
-   authenticated session — most coupon fields need login + a non-empty cart.
-4. `docker compose up -d --build worker`.
+3. `docker compose up -d --build worker` (first build pulls the ~2 GB Chromium image).
+4. Trigger a batch: `docker compose exec worker python -c "from scheduler.tasks import enqueue_revalidations; print(enqueue_revalidations())"`.
+
+For the **marketplace** configs you must additionally tune selectors against a
+live authenticated session — most of their coupon fields need login + a non-empty
+cart. The Shopify pilot needs none of that.
 
 ⚠️ This drives automated checkout actions against real retailers — the ToS /
 bot-detection risk in the register above. Run at low volume, on the

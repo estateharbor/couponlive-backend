@@ -42,7 +42,9 @@ services:
     restart: unless-stopped
 
   worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.worker   # Chromium image so checkout-validation can run a browser
     command: celery -A scheduler.celery_app worker --beat --loglevel=info --concurrency=2
     healthcheck:
       disable: true          # the worker doesn't serve /health (that's the API's check)
