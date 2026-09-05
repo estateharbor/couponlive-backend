@@ -60,6 +60,14 @@ class Settings(BaseSettings):
 
     # Affiliate API keys (preferred ingestion path)
     cuelinks_api_key: str = Field("", alias="CUELINKS_API_KEY")
+    # Cuelinks Offers API (coupon/deal feed across 400+ merchants, incl. Amazon).
+    # Endpoint is env-overridable so we can correct it against the live response.
+    cuelinks_api_url: str = Field(
+        "https://www.cuelinks.com/api/v2/offers.json", alias="CUELINKS_API_URL"
+    )
+    cuelinks_sync_frequency_minutes: int = Field(
+        60, alias="CUELINKS_SYNC_FREQUENCY_MINUTES"
+    )
     inrdeals_api_key: str = Field("", alias="INRDEALS_API_KEY")   # INRDeals API token
     inrdeals_username: str = Field("", alias="INRDEALS_USERNAME")  # INRDeals `id` param
     earnkaro_api_key: str = Field("", alias="EARNKARO_API_KEY")

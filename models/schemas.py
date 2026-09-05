@@ -68,6 +68,22 @@ class CouponOut(BaseModel):
     last_validated_at: datetime | None
 
 
+class DealOut(BaseModel):
+    """A code-less offer (e.g. an Amazon deal). Unlike a coupon it carries no
+    code to copy and is never checkout-verified; the CTA is the affiliate `url`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    merchant_id: int
+    merchant_name: str | None = None
+    description: str | None
+    discount_type: DiscountType
+    discount_value: float | None
+    url: str | None = None
+    last_seen: datetime
+
+
 class MerchantOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

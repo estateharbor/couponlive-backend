@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from scrapers.base import BaseScraper
+from scrapers.cuelinks_feed import CuelinksFeedScraper
 from scrapers.desidime import DesidimeScraper
 from scrapers.inrdeals import InrdealsIngestor
 from scrapers.linkmydeals_feed import LinkMyDealsFeedScraper
@@ -19,6 +20,7 @@ SCRAPER_REGISTRY: dict[str, Callable[[], BaseScraper]] = {
     DesidimeScraper.source_name: lambda: DesidimeScraper(max_pages=1),
     InrdealsIngestor.source_name: lambda: InrdealsIngestor(),
     LinkMyDealsFeedScraper.source_name: lambda: LinkMyDealsFeedScraper(),
+    CuelinksFeedScraper.source_name: lambda: CuelinksFeedScraper(),
 }
 
 

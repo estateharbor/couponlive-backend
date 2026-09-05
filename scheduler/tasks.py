@@ -94,6 +94,33 @@ def sync_linkmydeals() -> dict:
         session.close()
 
 
+@celery_app.task(name="sync_cuelinks")
+def sync_cuelinks() -> dict:
+    """Full pull of the Cuelinks Offers feed -> pipeline (codes + deals).
+
+    Cuelinks' Offers API returns the current live set each call (no incremental
+    cursor like LinkMyDeals), so we ingest the whole batch; the pipeline dedupes
+    and advances last_seen. New codes for validator-backed merchants get picked
+    up by the periodic `enqueue_revalidations` sweep.
+    """
+    from scrapers.cuelinks_feed import CuelinksFeedScraper, MissingCredentials
+
+    session = get_sessionmaker()()
+    try:
+        scraper = CuelinksFeedScraper()
+        try:
+            offers = scraper.scrape()
+        except MissingCredentials as exc:
+            log.warning("cuelinks.skipped", reason=str(exc))
+            return {"source": "Cuelinks", "skipped": "no api key"}
+
+        summary = ingest_raw(session, "Cuelinks", offers)
+        return {"source": "Cuelinks", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "raw": summary.raw_count}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
@@ -182,5 +209,10 @@ celery_app.conf.beat_schedule = {
     "sync-linkmydeals": {
         "task": "sync_linkmydeals",
         "schedule": timedelta(minutes=get_settings().linkmydeals_sync_frequency_minutes),
+    },
+    # Cuelinks Offers feed sync (coupons + deals across 400+ merchants).
+    "sync-cuelinks": {
+        "task": "sync_cuelinks",
+        "schedule": timedelta(minutes=get_settings().cuelinks_sync_frequency_minutes),
     },
 }
