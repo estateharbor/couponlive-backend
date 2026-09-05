@@ -194,10 +194,19 @@ def ingest_raw(
     summary.deduped_count = len(deduped)
 
     for nc in deduped:
+        # Snapshot counters so a rolled-back row doesn't inflate the summary.
+        _before = (summary.coupons_created, summary.coupons_updated,
+                   summary.provenance_created, summary.merchants_created)
         try:
-            _upsert_coupon(session, source, nc, summary)
-        except Exception as exc:  # isolate a bad row; don't fail the whole batch
-            session.rollback()
+            # Per-row SAVEPOINT: a bad row rolls back ONLY itself. A plain
+            # session.rollback() here would discard every already-processed row
+            # in this batch AND the source row created above — which silently
+            # loses a whole feed when a single offer violates a constraint.
+            with session.begin_nested():
+                _upsert_coupon(session, source, nc, summary)
+        except Exception as exc:  # isolate a bad row; keep the rest of the batch
+            (summary.coupons_created, summary.coupons_updated,
+             summary.provenance_created, summary.merchants_created) = _before
             summary.errors.append(f"{nc.identity}: {exc}")
             log.warning("ingest.row_failed", identity=str(nc.identity), error=str(exc))
 

@@ -116,7 +116,9 @@ def sync_cuelinks() -> dict:
 
         summary = ingest_raw(session, "Cuelinks", offers)
         return {"source": "Cuelinks", "created": summary.coupons_created,
-                "updated": summary.coupons_updated, "raw": summary.raw_count}
+                "updated": summary.coupons_updated, "raw": summary.raw_count,
+                "errors": len(summary.errors),
+                "sample_error": summary.errors[0] if summary.errors else None}
     finally:
         session.close()
 
