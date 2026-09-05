@@ -20,7 +20,10 @@ lxml>=5.2.0
 rapidfuzz>=3.9.0                # fuzzy merchant-name matching for dedup
 
 # --- Headless browser (Phase 3/4, only where required) ---
-playwright>=1.44.0
+# Pin EXACTLY to the browser version shipped by Dockerfile.worker's base image
+# (mcr.microsoft.com/playwright/python:v1.44.0-jammy). Playwright refuses to run
+# if the pip package and the bundled Chromium differ, so bump both together.
+playwright==1.44.0
 
 # --- Ops / logging ---
 structlog>=24.1.0
