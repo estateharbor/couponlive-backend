@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -43,6 +44,19 @@ from scrapers.desidime import _parse_discount  # reuse "50% off" / "₹200 off" 
 from scrapers.linkmydeals_feed import _OFFER_TYPE_MAP, _extract_offers, _first, _num
 
 log = get_logger("ingest.cuelinks")
+
+_TAG = re.compile(r"<[^>]+>")
+# Cuelinks `status` values we treat as usable; anything else (expired/paused/…)
+# is skipped. Empty status is allowed (older responses omit it).
+_LIVE_STATUSES = {"", "live", "active", "running", "enabled"}
+
+
+def _clean(value: Any) -> str:
+    """Decode HTML entities, strip tags (descriptions arrive as <li> markup),
+    and collapse whitespace."""
+    if not value:
+        return ""
+    return re.sub(r"\s+", " ", _TAG.sub(" ", html.unescape(str(value)))).strip()
 
 
 class MissingCredentials(RuntimeError):
@@ -82,27 +96,27 @@ class CuelinksFeedScraper(BaseScraper):
 
     # -- field mapping (confirm against a live sample via the diagnostic) ----
     def _map_offer(self, item: dict, fetched_at: datetime) -> RawCoupon | None:
+        # Merchant sits in `campaign` (confirmed live); keep other names as fallbacks.
         merchant = _first(
-            item, "merchant", "merchant_name", "store", "store_name",
-            "campaign", "campaign_name",
+            item, "campaign", "merchant", "merchant_name", "store", "store_name",
+            "campaign_name",
         )
         external_ref = _first(item, "id", "offer_id", "cuelink_id", "uid")
         code = _first(item, "coupon_code", "code", "coupon", "couponcode")
         if not merchant or external_ref in (None, ""):
             return None  # no stable identity -> skip rather than store junk
 
-        # Decode HTML entities (e.g. "&#8377;" == ₹) before parsing discounts/text.
-        title = html.unescape(str(_first(item, "title", "offer_title", "name") or ""))
-        description = html.unescape(
-            str(_first(item, "description", "offer_description", "long_description") or "")
-        )
-        offer_label = _first(item, "offer_type", "type", "coupon_type")
+        # Decode entities + strip HTML (descriptions arrive as <li> markup).
+        title = _clean(_first(item, "title", "offer_title", "name"))
+        description = _clean(_first(item, "description", "offer_description", "long_description"))
+        offer_label = _first(item, "type", "offer_type", "coupon_type")
         dtype, dval = _map_discount(offer_label, f"{title} {description}")
 
-        # Affiliate deeplink so clicks are tracked / earn commission.
+        # `affiliate_url` is the Cuelinks TRACKING link (earns commission) — prefer
+        # it over the plain merchant `url`, which is NOT tracked.
         url = _first(
-            item, "url", "link", "click_url", "offer_url", "cuelink",
-            "deeplink", "smartlink", "affiliate_link",
+            item, "affiliate_url", "click_url", "cue_url", "tracking_url", "short_url",
+            "url", "link", "offer_url", "deeplink", "smartlink", "affiliate_link",
         )
         text = title or description or None
 
@@ -151,6 +165,10 @@ class CuelinksFeedScraper(BaseScraper):
             total_raw += len(offers)
             new_on_page = 0
             for it in offers:
+                # Skip offers the feed marks not-live (expired/paused/…).
+                status = str(_first(it, "status") or "").strip().lower()
+                if status not in _LIVE_STATUSES:
+                    continue
                 rc = self._map_offer(it, fetched_at)
                 if rc is None or rc.external_ref in seen_refs:
                     continue

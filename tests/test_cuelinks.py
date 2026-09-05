@@ -1,8 +1,9 @@
 """Tests for the Cuelinks Offers-API ingestor (mocked HTTP).
 
-Response-shape health check + the code/deal split: a coupon-code offer becomes a
-coded RawCoupon; a code-less offer becomes a deal (code=None). If Cuelinks
-changes field names these assertions break loudly — our early warning.
+SAMPLE mirrors the REAL Cuelinks response shape (confirmed live 2026-09):
+merchant in `campaign`, code in `coupon_code`, the tracked link in
+`affiliate_url` (NOT the plain `url`), an HTML `description`, and a `status`.
+If Cuelinks changes these, the assertions break loudly — our early warning.
 """
 from __future__ import annotations
 
@@ -40,12 +41,15 @@ class _FakeSession:
 
 SAMPLE = {
     "offers": [
-        {"id": "c1", "merchant": "Amazon", "title": "Flat 40% Off Electronics",
-         "coupon_code": "AMZ40", "offer_type": "Code", "url": "https://cue/c1"},
-        {"id": "c2", "merchant": "Amazon", "title": "Up to 60% Off Fashion",
-         "offer_type": "Deal", "url": "https://cue/c2"},                     # no code -> deal
-        {"id": "c3", "store": "Flipkart", "description": "Flat &#8377;300 Off first order",
-         "code": "FLIP300", "offer_type": "Code", "link": "https://cue/c3"},
+        {"id": 128504, "campaign": "Airalo WW", "title": "Claim Your 15% Discount",
+         "description": "<li>Receive 15% off your first eSIM!</li>", "coupon_code": "SEPTEMBER15",
+         "type": "discount", "status": "live", "url": "https://www.airalo.com/",
+         "affiliate_url": "https://linksredirect.com/?pub_id=272129&url=airalo"},
+        {"id": 200, "campaign": "Amazon WW", "title": "Up to 60% Off Fashion",
+         "description": "", "coupon_code": "", "type": "deal", "status": "live",
+         "url": "https://www.amazon.in/", "affiliate_url": "https://linksredirect.com/?pub_id=1&url=amazon"},
+        {"id": 300, "campaign": "OldStore", "title": "Expired 10% Off", "coupon_code": "OLD10",
+         "type": "discount", "status": "expired", "affiliate_url": "https://linksredirect.com/?x"},
     ]
 }
 
@@ -54,32 +58,34 @@ def _scraper(pages=None):
     return CuelinksFeedScraper(api_key="k", session=_FakeSession(pages or {1: SAMPLE}))
 
 
-def test_maps_codes_and_deals():
+def test_maps_codes_and_deals_and_skips_expired():
     active = _scraper().scrape()
     by_ref = {r.external_ref: r for r in active}
-    assert set(by_ref) == {"c1", "c2", "c3"}
+    assert set(by_ref) == {"128504", "200"}       # "300" is expired -> skipped
     assert all(r.ingestion_method is IngestionMethod.affiliate_api for r in active)
 
-    amazon_code = by_ref["c1"]
-    assert amazon_code.code == "AMZ40" and amazon_code.merchant_name == "Amazon"
-    assert amazon_code.discount_type is DiscountType.percentage and amazon_code.discount_value == 40
-    assert amazon_code.source_url == "https://cue/c1"
+    airalo = by_ref["128504"]
+    assert airalo.code == "SEPTEMBER15" and airalo.merchant_name == "Airalo WW"
+    assert airalo.discount_type is DiscountType.percentage and airalo.discount_value == 15
 
-    deal = by_ref["c2"]
-    assert deal.code is None                      # code-less -> a deal
-    assert deal.source_url == "https://cue/c2"
-
-    flip = by_ref["c3"]                            # `store` + `link` + `code` fallbacks
-    assert flip.code == "FLIP300" and flip.merchant_name == "Flipkart"
+    deal = by_ref["200"]
+    assert deal.code is None                       # empty coupon_code -> a deal
 
 
-def test_html_entity_rupee_decoded():
-    # "&#8377;300" must map to fixed/300, not unknown/8377.
+def test_affiliate_url_preferred_for_commission():
+    airalo = {r.external_ref: r for r in _scraper().scrape()}["128504"]
+    # MUST be the tracked linksredirect URL, never the plain merchant homepage.
+    assert airalo.source_url.startswith("https://linksredirect.com/")
+    assert "airalo.com" not in airalo.source_url
+
+
+def test_html_description_stripped():
     s = _scraper()
-    item = {"id": "x", "merchant": "Ajio", "code": "A300",
-            "description": "Get Flat &#8377;300 OFF", "offer_type": "Code"}
+    item = {"id": "9", "campaign": "Foo", "coupon_code": "X", "type": "discount",
+            "title": "", "description": "<li>Flat &#8377;300 OFF</li><li>terms apply</li>"}
     rc = s._map_offer(item, datetime.now(timezone.utc))
-    assert rc.discount_type is DiscountType.fixed and rc.discount_value == 300
+    assert "<li>" not in (rc.description or "")
+    assert rc.discount_type is DiscountType.fixed and rc.discount_value == 300  # ₹ entity decoded
 
 
 def test_auth_header_and_key_sent():
@@ -91,13 +97,10 @@ def test_auth_header_and_key_sent():
 
 
 def test_pagination_dedupes_and_stops():
-    pages = {
-        1: {"offers": [{"id": "c1", "merchant": "Amazon", "title": "10% Off", "code": "A"}]},
-        2: {"offers": [{"id": "c1", "merchant": "Amazon", "title": "10% Off", "code": "A"}]},  # dup
-    }
-    s = CuelinksFeedScraper(api_key="k", session=_FakeSession(pages))
-    active = s.scrape()
-    assert len(active) == 1                        # dedup by external_ref; repeat page stops loop
+    row = {"id": "c1", "campaign": "Amazon", "title": "10% Off", "coupon_code": "A", "status": "live"}
+    s = CuelinksFeedScraper(api_key="k", session=_FakeSession({1: {"offers": [row]},
+                                                               2: {"offers": [row]}}))
+    assert len(s.scrape()) == 1                     # dedup by external_ref; repeat page stops loop
 
 
 def test_missing_key_raises():
