@@ -42,6 +42,9 @@ log = get_logger("validator.shopify")
 # Add a merchant here only after confirming its storefront is Shopify and its
 # guest checkout exposes the standard discount field.
 SHOPIFY_STORES: dict[str, str] = {
+    # Pilot: kushals has live usable codes in the feed and a standard Shopify
+    # guest checkout (confirmed 2026-09: NEW200 applies, a bad code errors).
+    "kushals": "https://www.kushals.com",
     "fuaark": "https://fuaark.com",
 }
 

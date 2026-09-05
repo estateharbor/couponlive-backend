@@ -84,15 +84,18 @@ field with no sign-in. That makes one validator — `validators/merchants/shopif
    `"expired"`) → **INVALID**; an applied-discount tag / reduced total with no
    error → **VALID**; anything ambiguous → **UNVERIFIABLE** (fails safe).
 
-Confirmed live against **fuaark.com** (2026-09): a bad code surfaces its error via
-the discount input's `aria-describedby`. Stores are registered in `SHOPIFY_STORES`
-(keyed by normalized merchant name → base URL); add a merchant only after
-confirming its storefront is Shopify. Classifier is unit-tested offline in
-`tests/test_shopify_validator.py` (the safety property: a rejection can never read
-as valid).
+Confirmed live (2026-09): on **kushals.com** the real code `NEW200` applies (a
+remove-discount control appears, no error → VALID); on **fuaark.com** a bad code
+surfaces its rejection via the discount input's `aria-describedby` → INVALID.
+Stores are registered in `SHOPIFY_STORES` (keyed by normalized merchant name →
+base URL); add a merchant only after confirming its storefront is Shopify.
+Classifier is unit-tested offline in `tests/test_shopify_validator.py` (the safety
+property: a rejection can never read as valid).
 
-Pilot scope: **fuaark** only. The marketplace configs (Myntra/Amazon/Flipkart/
-Ajio/Nykaa) remain placeholders needing login + selector tuning.
+Pilot scope: **kushals** (has live usable codes in the feed) + fuaark. The
+marketplace configs (Myntra/Amazon/Flipkart/Ajio/Nykaa) remain placeholders
+needing login + selector tuning — the merchants with the most codes (firstcry,
+Yatra, box8) are login-gated and out of scope for this pilot.
 
 ## Enabling checkout validation (opt-in)
 

@@ -62,5 +62,7 @@ def test_unrecognized_error_text_fails_safe():
     assert _classify(probe) is ValidationResultEnum.unverifiable
 
 
-def test_fuaark_registered_as_pilot():
+def test_pilot_stores_registered():
+    # kushals is the pilot with live usable codes; both must be real https bases.
+    assert SHOPIFY_STORES.get("kushals", "").startswith("https://")
     assert SHOPIFY_STORES.get("fuaark", "").startswith("https://")
