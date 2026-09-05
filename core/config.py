@@ -68,6 +68,16 @@ class Settings(BaseSettings):
     cuelinks_sync_frequency_minutes: int = Field(
         60, alias="CUELINKS_SYNC_FREQUENCY_MINUTES"
     )
+    # Feedico coupon-catalog API (free tier: 1000 req/mo, 40k+ merchants,
+    # deduped codes). "Discovery only" — codes but NO affiliate tracking link.
+    feedico_api_key: str = Field("", alias="FEEDICO_API_KEY")      # bearer token, e.g. fdco_...
+    feedico_api_url: str = Field(
+        "https://feedico.io/api/v1/catalog/coupons", alias="FEEDICO_API_URL"
+    )
+    feedico_country: str = Field("IN", alias="FEEDICO_COUNTRY")    # focus on India; "" = all
+    feedico_sync_frequency_minutes: int = Field(
+        720, alias="FEEDICO_SYNC_FREQUENCY_MINUTES"               # 12h — respect the 1000/mo cap
+    )
     inrdeals_api_key: str = Field("", alias="INRDEALS_API_KEY")   # INRDeals API token
     inrdeals_username: str = Field("", alias="INRDEALS_USERNAME")  # INRDeals `id` param
     earnkaro_api_key: str = Field("", alias="EARNKARO_API_KEY")

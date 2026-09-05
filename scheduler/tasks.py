@@ -123,6 +123,30 @@ def sync_cuelinks() -> dict:
         session.close()
 
 
+@celery_app.task(name="sync_feedico")
+def sync_feedico() -> dict:
+    """Full pull of the Feedico coupon catalog -> pipeline (codes; discovery-only,
+    no affiliate tracking link). Free tier is 1000 req/mo, so this runs on a slow
+    cadence (see FEEDICO_SYNC_FREQUENCY_MINUTES)."""
+    from scrapers.feedico_feed import FeedicoFeedScraper, MissingCredentials
+
+    session = get_sessionmaker()()
+    try:
+        try:
+            offers = FeedicoFeedScraper().scrape()
+        except MissingCredentials as exc:
+            log.warning("feedico.skipped", reason=str(exc))
+            return {"source": "Feedico", "skipped": "no api key"}
+
+        summary = ingest_raw(session, "Feedico", offers)
+        return {"source": "Feedico", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "raw": summary.raw_count,
+                "errors": len(summary.errors),
+                "sample_error": summary.errors[0] if summary.errors else None}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
@@ -216,5 +240,10 @@ celery_app.conf.beat_schedule = {
     "sync-cuelinks": {
         "task": "sync_cuelinks",
         "schedule": timedelta(minutes=get_settings().cuelinks_sync_frequency_minutes),
+    },
+    # Feedico coupon-catalog sync (slow cadence — free tier is 1000 req/month).
+    "sync-feedico": {
+        "task": "sync_feedico",
+        "schedule": timedelta(minutes=get_settings().feedico_sync_frequency_minutes),
     },
 }

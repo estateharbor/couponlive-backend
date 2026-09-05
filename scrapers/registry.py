@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 from scrapers.base import BaseScraper
 from scrapers.cuelinks_feed import CuelinksFeedScraper
+from scrapers.feedico_feed import FeedicoFeedScraper
 from scrapers.desidime import DesidimeScraper
 from scrapers.inrdeals import InrdealsIngestor
 from scrapers.linkmydeals_feed import LinkMyDealsFeedScraper
@@ -21,6 +22,7 @@ SCRAPER_REGISTRY: dict[str, Callable[[], BaseScraper]] = {
     InrdealsIngestor.source_name: lambda: InrdealsIngestor(),
     LinkMyDealsFeedScraper.source_name: lambda: LinkMyDealsFeedScraper(),
     CuelinksFeedScraper.source_name: lambda: CuelinksFeedScraper(),
+    FeedicoFeedScraper.source_name: lambda: FeedicoFeedScraper(),
 }
 
 
