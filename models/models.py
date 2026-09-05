@@ -193,7 +193,9 @@ class CouponSource(Base, TimestampMixin):
     source_id: Mapped[int] = mapped_column(
         ForeignKey("sources.id", ondelete="CASCADE"), nullable=False
     )
-    source_url: Mapped[str | None] = mapped_column(String(1024))
+    # TEXT (not a bounded varchar): affiliate tracking deeplinks can exceed 1KB
+    # (e.g. a TataCliq search link ~1080 chars) — see migration 0005.
+    source_url: Mapped[str | None] = mapped_column(Text)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
