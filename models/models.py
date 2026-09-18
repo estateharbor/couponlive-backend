@@ -34,6 +34,9 @@ from models.enums import (
     CouponStatus,
     DiscountType,
     IngestionMethod,
+    TrialOfferType,
+    TrialStatus,
+    TrialVerificationStatus,
     ValidationResultEnum,
 )
 
@@ -254,4 +257,89 @@ class UserFeedback(Base):
 
     __table_args__ = (
         Index("ix_feedback_coupon", "coupon_id", "submitted_at"),
+    )
+
+
+# --- Free Trials vertical -------------------------------------------------
+class Tool(Base, TimestampMixin):
+    """A premium software/AI/OTT tool whose free trials we list."""
+
+    __tablename__ = "tools"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    slug: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    vendor_name: Mapped[str | None] = mapped_column(String(255))
+    tagline: Mapped[str | None] = mapped_column(String(512))
+    description: Mapped[str | None] = mapped_column(Text)
+    website_url: Mapped[str | None] = mapped_column(Text)
+    pricing_page_url: Mapped[str | None] = mapped_column(Text)  # what the extractor reads
+    logo_url: Mapped[str | None] = mapped_column(Text)
+    # Flat category slug from the TrialLive taxonomy (e.g. "ai", "design").
+    category: Mapped[str | None] = mapped_column(String(64), index=True)
+    tags: Mapped[str | None] = mapped_column(Text)             # comma-separated, simple for MVP
+    is_ai_tool: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    platforms: Mapped[str | None] = mapped_column(String(255))  # comma-separated: web,ios,…
+    base_price_inr: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    base_price_usd: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    popularity_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[TrialStatus] = mapped_column(
+        SAEnum(TrialStatus, name="trial_status"), default=TrialStatus.live, nullable=False
+    )
+
+    offers: Mapped[list["TrialOffer"]] = relationship(
+        back_populates="tool", cascade="all, delete-orphan"
+    )
+
+
+class TrialOffer(Base, TimestampMixin):
+    """A single free-trial / promo offer for a tool. Facts stay honest: a NULL
+    means "unknown" and must render as Unknown, never guessed."""
+
+    __tablename__ = "trial_offers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_id: Mapped[int] = mapped_column(
+        ForeignKey("tools.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    offer_type: Mapped[TrialOfferType] = mapped_column(
+        SAEnum(TrialOfferType, name="trial_offer_type"),
+        default=TrialOfferType.unknown, nullable=False, index=True,
+    )
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    trial_days: Mapped[int | None] = mapped_column(Integer)
+    credit_amount: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    credit_currency: Mapped[str | None] = mapped_column(String(8))
+    card_required: Mapped[bool | None] = mapped_column(Boolean)      # NULL = unknown
+    india_available: Mapped[bool | None] = mapped_column(Boolean)    # NULL = unknown
+    eligibility: Mapped[str | None] = mapped_column(String(512))
+    auto_renews: Mapped[bool | None] = mapped_column(Boolean)
+    renew_price_inr: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    renew_price_usd: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    renew_period: Mapped[str | None] = mapped_column(String(16))     # month / year
+    signup_url: Mapped[str] = mapped_column(Text, nullable=False)
+    cancel_url: Mapped[str | None] = mapped_column(Text)
+    how_to_claim: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(String(64))           # vendor_page / manual / …
+    source_url: Mapped[str | None] = mapped_column(Text)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Hash of the extracted pricing-page text — skip the LLM when unchanged (T2).
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_verified_from: Mapped[str | None] = mapped_column(String(8))  # 'IN' / 'US'
+    verification_status: Mapped[TrialVerificationStatus] = mapped_column(
+        SAEnum(TrialVerificationStatus, name="trial_verification_status"),
+        default=TrialVerificationStatus.unverified, nullable=False, index=True,
+    )
+    status: Mapped[TrialStatus] = mapped_column(
+        SAEnum(TrialStatus, name="trial_status", create_type=False),
+        default=TrialStatus.live, nullable=False,
+    )
+
+    tool: Mapped["Tool"] = relationship(back_populates="offers")
+
+    __table_args__ = (
+        Index("ix_trial_offer_card_required", "card_required"),
+        Index("ix_trial_offer_expires_at", "expires_at"),
     )

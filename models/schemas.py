@@ -14,6 +14,8 @@ from models.enums import (
     CouponStatus,
     DiscountType,
     IngestionMethod,
+    TrialOfferType,
+    TrialVerificationStatus,
     ValidationResultEnum,
 )
 
@@ -93,6 +95,79 @@ class MerchantOut(BaseModel):
     website: str | None
     coupon_count: int = 0
     valid_coupon_count: int = 0
+
+
+# --- Free Trials vertical ------------------------------------------------
+class TrialOfferOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    offer_type: TrialOfferType
+    title: str
+    trial_days: int | None
+    credit_amount: float | None
+    credit_currency: str | None
+    card_required: bool | None
+    india_available: bool | None
+    eligibility: str | None
+    auto_renews: bool | None
+    renew_price_inr: float | None
+    renew_price_usd: float | None
+    renew_period: str | None
+    signup_url: str
+    cancel_url: str | None
+    how_to_claim: str | None
+    expires_at: datetime | None
+    confidence_score: float
+    last_verified_at: datetime | None
+    last_verified_from: str | None
+    verification_status: TrialVerificationStatus
+
+
+class ToolOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    vendor_name: str | None = None
+    tagline: str | None = None
+    description: str | None = None
+    website_url: str | None = None
+    logo_url: str | None = None
+    category: str | None = None
+    is_ai_tool: bool = False
+    platforms: str | None = None
+    popularity_score: float = 0.0
+    offers: list[TrialOfferOut] = []
+
+
+class TrialCardOut(BaseModel):
+    """One offer flattened with its tool summary — the unit the grid renders."""
+
+    id: int                       # offer id
+    tool_name: str
+    tool_slug: str
+    logo_url: str | None = None
+    category: str | None = None
+    is_ai_tool: bool = False
+    offer_type: TrialOfferType
+    title: str
+    trial_days: int | None = None
+    credit_amount: float | None = None
+    credit_currency: str | None = None
+    card_required: bool | None = None
+    india_available: bool | None = None
+    eligibility: str | None = None
+    renew_price_inr: float | None = None
+    renew_price_usd: float | None = None
+    renew_period: str | None = None
+    signup_url: str
+    confidence_score: float = 0.0
+    last_verified_at: datetime | None = None
+    last_verified_from: str | None = None
+    verification_status: TrialVerificationStatus
+    expires_at: datetime | None = None
 
 
 class FeedbackIn(BaseModel):
