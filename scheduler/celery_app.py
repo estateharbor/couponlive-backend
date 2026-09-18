@@ -23,6 +23,12 @@ celery_app = Celery(
     "couponlive",
     broker=settings.redis_url,
     backend=settings.redis_url,
+    # Import the tasks module on startup. Without this, `celery -A
+    # scheduler.celery_app worker --beat` loads only the app object — NOT
+    # scheduler/tasks.py — so NO tasks register and beat starts with an EMPTY
+    # schedule. That silently stopped every scheduled sync/validation; the only
+    # runs were manual `python -c "from scheduler.tasks import ..."` calls.
+    include=["scheduler.tasks"],
 )
 
 celery_app.conf.update(
@@ -33,5 +39,8 @@ celery_app.conf.update(
     timezone="UTC",
 )
 
-# Beat schedule (populated in Phase 2+):
-# celery_app.conf.beat_schedule = { ... }
+# The beat_schedule + @task registrations live in scheduler/tasks.py. Import it
+# here for its side effects so the schedule is loaded whenever this app module is
+# loaded (worker, beat, or a plain import) — not only when tasks is imported by
+# name. Placed at the bottom so `celery_app` is already defined (no import cycle).
+from scheduler import tasks as _tasks  # noqa: E402,F401
