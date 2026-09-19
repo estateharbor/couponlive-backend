@@ -103,6 +103,45 @@ class NormalizedCoupon:
         return (self.normalized_merchant, f"ref:{self.external_ref}")
 
 
+_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+_RUP_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def sanitize_discount(
+    dtype: DiscountType, dval: float | None, text: str
+) -> tuple[DiscountType, float | None]:
+    """Reconcile a feed's discount type/value against the human description (the
+    source of truth), so we never render a label that contradicts the text
+    (e.g. "Flat 100% Off" when it's ₹500 off, or a "Free Shipping" chip on a
+    rupee discount). If the text has no usable signal, keep the feed's values but
+    drop implausible ones (e.g. a >95% "percentage")."""
+    t = (text or "").lower()
+    pct_m = _PCT_RE.search(t)
+    rup_m = _RUP_RE.search(t)
+    pv = float(pct_m.group(1)) if pct_m else None
+    rv = float(rup_m.group(1).replace(",", "")) if rup_m else None
+
+    if "cashback" in t:
+        return DiscountType.cashback, (pv if pv and 0 < pv <= 95 else None)
+    if "bogo" in t or "buy 1" in t or "buy one" in t:
+        return DiscountType.bogo, None
+    if ("free shipping" in t or "free delivery" in t) and pv is None and rv is None:
+        return DiscountType.free_shipping, None
+    if pv is not None and 0 < pv <= 95:      # a plausible percentage in the text wins
+        return DiscountType.percentage, pv
+    if rv is not None and rv > 0:            # else a rupee amount in the text wins
+        return DiscountType.fixed, rv
+
+    # No usable signal in the text — keep the feed's type, but reject nonsense.
+    if dtype is DiscountType.percentage and not (dval is not None and 0 < dval <= 95):
+        return DiscountType.unknown, None
+    if dtype is DiscountType.fixed and dval is not None and dval <= 0:
+        return DiscountType.unknown, None
+    if dtype in (DiscountType.free_shipping, DiscountType.bogo):
+        return dtype, None
+    return dtype, dval
+
+
 def normalize_and_dedupe(raw: list[RawCoupon]) -> list[NormalizedCoupon]:
     """Collapse a raw batch into canonical, deduped offers.
 
@@ -123,6 +162,11 @@ def normalize_and_dedupe(raw: list[RawCoupon]) -> list[NormalizedCoupon]:
         if code is None and not rc.external_ref:
             continue
 
+        # Reconcile discount against the description so labels never contradict
+        # the text (fixes "100% off" vs "₹500", wrong "Free Shipping", etc.).
+        dtype, dval = sanitize_discount(
+            rc.discount_type or DiscountType.unknown, rc.discount_value, rc.description or ""
+        )
         nc = NormalizedCoupon(
             merchant_name=canonical,
             normalized_merchant=nmerchant,
@@ -130,8 +174,8 @@ def normalize_and_dedupe(raw: list[RawCoupon]) -> list[NormalizedCoupon]:
             external_ref=rc.external_ref,
             requires_reveal=rc.requires_reveal or (code is None),
             description=rc.description,
-            discount_type=rc.discount_type or DiscountType.unknown,
-            discount_value=rc.discount_value,
+            discount_type=dtype,
+            discount_value=dval,
             first_seen=rc.scraped_at,
             last_seen=rc.scraped_at,
             sources=[(rc.source_url, rc.scraped_at, rc.ingestion_method)],
