@@ -267,6 +267,21 @@ def verify_due_trials() -> dict:
         session.close()
 
 
+@celery_app.task(name="send_due_reminders")
+def send_due_reminders() -> dict:
+    """Beat: email cancel-reminders whose window is due; expire past ones.
+    Emails only go out once an email provider is configured; until then the
+    reminders are stored and simply wait."""
+    from core.email import send_email
+    from scheduler.reminders import dispatch_due_reminders
+
+    session = get_sessionmaker()()
+    try:
+        return dispatch_due_reminders(session, send=send_email)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
@@ -375,5 +390,10 @@ celery_app.conf.beat_schedule = {
     "verify-trials": {
         "task": "verify_due_trials",
         "schedule": timedelta(minutes=get_settings().trial_verify_frequency_minutes),
+    },
+    # Free Trials: send cancel-reminders (stores work always; emails once keyed).
+    "send-reminders": {
+        "task": "send_due_reminders",
+        "schedule": timedelta(minutes=get_settings().reminder_check_frequency_minutes),
     },
 }

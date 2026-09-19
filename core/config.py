@@ -120,6 +120,16 @@ class Settings(BaseSettings):
     # Approx USD->INR fallback when a live FX lookup isn't wired (labelled approx).
     fx_usd_inr: float = Field(83.0, alias="FX_USD_INR")
 
+    # Cancel-reminder emails (Free Trials T4). Provider-agnostic: Resend primary,
+    # Brevo fallback. Reminders are stored regardless; emails send once a key set.
+    resend_api_key: str = Field("", alias="RESEND_API_KEY")
+    brevo_api_key: str = Field("", alias="BREVO_API_KEY")
+    email_from: str = Field("CouponLive <reminders@couponlive.in>", alias="EMAIL_FROM")
+    app_url: str = Field("https://couponlive.in", alias="APP_URL")
+    reminder_check_frequency_minutes: int = Field(
+        720, alias="REMINDER_CHECK_FREQUENCY_MINUTES"     # 12h — catches 3-day & 1-day marks
+    )
+
     # Alerting
     alert_webhook_url: str = Field("", alias="ALERT_WEBHOOK_URL")
     alert_min_success_rate: float = Field(0.5, alias="ALERT_MIN_SUCCESS_RATE")

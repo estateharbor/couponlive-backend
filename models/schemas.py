@@ -6,7 +6,7 @@ scraper never has to know anything about the database.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,7 @@ from models.enums import (
     DiscountType,
     IngestionMethod,
     TrialOfferType,
+    TrialReminderStatus,
     TrialVerificationStatus,
     ValidationResultEnum,
 )
@@ -168,6 +169,32 @@ class TrialCardOut(BaseModel):
     last_verified_from: str | None = None
     verification_status: TrialVerificationStatus
     expires_at: datetime | None = None
+
+
+class ReminderIn(BaseModel):
+    """Create a cancel-reminder. Either `ends_on` OR (`started_on` + `trial_days`)
+    must resolve to an end date. `consent` must be true (DPDP)."""
+
+    email: str
+    tool_name: str
+    offer_id: int | None = None
+    ends_on: date | None = None
+    started_on: date | None = None
+    trial_days: int | None = None
+    renew_price_inr: float | None = None
+    renew_note: str | None = None
+    cancel_url: str | None = None
+    remind_days_before: list[int] | None = None
+    consent: bool = False
+
+
+class ReminderOut(BaseModel):
+    token: str
+    tool_name: str
+    ends_on: date
+    status: TrialReminderStatus
+    remind_days_before: list[int]
+    manage_url: str | None = None
 
 
 class FeedbackIn(BaseModel):

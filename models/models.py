@@ -12,9 +12,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from datetime import date
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum as SAEnum,
     Float,
@@ -35,6 +38,7 @@ from models.enums import (
     DiscountType,
     IngestionMethod,
     TrialOfferType,
+    TrialReminderStatus,
     TrialStatus,
     TrialVerificationStatus,
     ValidationResultEnum,
@@ -342,4 +346,37 @@ class TrialOffer(Base, TimestampMixin):
     __table_args__ = (
         Index("ix_trial_offer_card_required", "card_required"),
         Index("ix_trial_offer_expires_at", "expires_at"),
+    )
+
+
+class TrialReminder(Base, TimestampMixin):
+    """A cancel-before-auto-debit reminder. Account-less by design: keyed by the
+    email the user entered + a random token for one-click manage/unsubscribe.
+    Minimal PII (email only), explicit consent required at creation (DPDP)."""
+
+    __tablename__ = "trial_reminders"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    # Optional link to a listed offer; SET NULL so deleting an offer keeps the
+    # reminder (custom/off-site trials have no offer_id at all).
+    offer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trial_offers.id", ondelete="SET NULL")
+    )
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)  # snapshot for the email
+    ends_on: Mapped[date] = mapped_column(Date, nullable=False)
+    renew_price_inr: Mapped[float | None] = mapped_column(Numeric(12, 2))
+    renew_note: Mapped[str | None] = mapped_column(String(64))  # e.g. "$12.99/month" when USD
+    cancel_url: Mapped[str | None] = mapped_column(Text)
+    remind_days_before: Mapped[str] = mapped_column(String(32), default="3,1", nullable=False)
+    # CSV of day-offsets already emailed, so we never send the same reminder twice.
+    sent_offsets: Mapped[str] = mapped_column(String(64), default="", nullable=False)
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    status: Mapped[TrialReminderStatus] = mapped_column(
+        SAEnum(TrialReminderStatus, name="trial_reminder_status"),
+        default=TrialReminderStatus.active, nullable=False, index=True,
+    )
+
+    __table_args__ = (
+        Index("ix_trial_reminder_due", "status", "ends_on"),
     )

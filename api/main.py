@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.config import get_settings
 from core.logging import get_logger
-from api.routers import coupons, deals, health, merchants, trials
+from api.routers import coupons, deals, health, merchants, reminders, trials
 
 log = get_logger("api")
 
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
     app.include_router(deals.router)
     app.include_router(merchants.router)
     app.include_router(trials.router)
+    app.include_router(reminders.router)
 
     @app.get("/", tags=["meta"])
     def root() -> dict:

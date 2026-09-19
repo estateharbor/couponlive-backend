@@ -78,3 +78,13 @@ class TrialStatus(str, Enum):
     hidden = "hidden"
     pending_review = "pending_review"
     archived = "archived"
+
+
+class TrialReminderStatus(str, Enum):
+    """State of a user's cancel-before-auto-debit reminder."""
+
+    active = "active"        # scheduled; reminders will send
+    cancelled = "cancelled"  # user marked the trial cancelled
+    converted = "converted"  # user kept it (let it convert to paid)
+    expired = "expired"      # end date passed
+    unsubscribed = "unsubscribed"
