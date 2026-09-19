@@ -181,7 +181,7 @@ def extract_due_trials() -> dict:
     from scrapers.trial_extraction import extract_for_tool
 
     settings = get_settings()
-    if not (settings.gemini_api_key or settings.openai_api_key):
+    if not (settings.emergent_llm_key or settings.gemini_api_key or settings.openai_api_key):
         return {"skipped": "no llm key"}
 
     session = get_sessionmaker()()

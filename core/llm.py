@@ -60,6 +60,28 @@ def _gemini(system: str, user: str, *, model: str, key: str, timeout: int) -> tu
     return _parse_json(text), tokens
 
 
+def _emergent(system: str, user: str, *, base_url: str, model: str, key: str, timeout: int) -> tuple[dict, int]:
+    """Emergent Universal Key via its OpenAI-compatible proxy. `response_format`
+    is omitted (not all routed providers accept it); we rely on the JSON prompt
+    + tolerant parser instead."""
+    body = {
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0,
+    }
+    r = requests.post(
+        f"{base_url.rstrip('/')}/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "X-App-ID": "https://couponlive.in"},
+        json=body,
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    data = r.json()
+    text = data["choices"][0]["message"]["content"]
+    tokens = int((data.get("usage") or {}).get("total_tokens", 0))
+    return _parse_json(text), tokens
+
+
 def _openai(system: str, user: str, *, model: str, key: str, timeout: int) -> tuple[dict, int]:
     body = {
         "model": model,
@@ -82,6 +104,14 @@ def llm_extract_json(system: str, user: str, *, timeout: int = 60) -> tuple[dict
     s = get_settings()
     errors: list[str] = []
 
+    if s.emergent_llm_key:
+        try:
+            return _emergent(system, user, base_url=s.emergent_base_url,
+                             model=s.emergent_model, key=s.emergent_llm_key, timeout=timeout)
+        except Exception as exc:  # fall through to a direct provider if configured
+            errors.append(f"emergent: {exc}")
+            log.warning("llm.emergent_failed", error=str(exc))
+
     if s.gemini_api_key:
         try:
             return _gemini(system, user, model=s.llm_primary_model, key=s.gemini_api_key, timeout=timeout)
@@ -97,7 +127,7 @@ def llm_extract_json(system: str, user: str, *, timeout: int = 60) -> tuple[dict
             log.warning("llm.openai_failed", error=str(exc))
 
     raise LLMUnavailable(
-        "No LLM provider available. Set GEMINI_API_KEY (or OPENAI_API_KEY). "
+        "No LLM provider available. Set EMERGENT_LLM_KEY (or GEMINI_API_KEY / OPENAI_API_KEY). "
         + ("; ".join(errors) if errors else "")
     )
 

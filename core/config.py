@@ -98,6 +98,14 @@ class Settings(BaseSettings):
     # OpenAI as fallback. Extraction is skipped when neither key is set.
     gemini_api_key: str = Field("", alias="GEMINI_API_KEY")
     openai_api_key: str = Field("", alias="OPENAI_API_KEY")
+    # Emergent "Universal Key" (sk-emergent-*): one key for GPT/Gemini/Claude via
+    # an OpenAI-compatible proxy. Tried FIRST when set. base_url + model are
+    # env-overridable so we can correct them against the live response.
+    emergent_llm_key: str = Field("", alias="EMERGENT_LLM_KEY")
+    emergent_base_url: str = Field(
+        "https://integrations.emergentagent.com/llm", alias="EMERGENT_BASE_URL"
+    )
+    emergent_model: str = Field("gpt-4o-mini", alias="EMERGENT_MODEL")
     llm_primary_model: str = Field("gemini-2.0-flash", alias="LLM_PRIMARY_MODEL")
     llm_fallback_model: str = Field("gpt-4o-mini", alias="LLM_FALLBACK_MODEL")
     llm_daily_token_budget: int = Field(2_000_000, alias="LLM_DAILY_TOKEN_BUDGET")
