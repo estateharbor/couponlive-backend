@@ -115,24 +115,19 @@ def tier1_http(url: str, *, session: requests.Session | None = None) -> tuple[bo
 
 
 def tier2_browser(url: str) -> tuple[bool, bool, str]:
-    """(trial_text_found, signup_found, page_text). Best-effort; never raises."""
+    """(trial_text_found, signup_found, page_text). Best-effort; never raises.
+
+    Reuses the T2 fetcher (requests -> Playwright fallback -> cleaned text), which
+    reliably renders JS-heavy pricing pages, so marker matching + the Tier-3 LLM
+    see real content instead of a JS shell."""
     try:
-        from playwright.sync_api import sync_playwright
-    except Exception as exc:
-        log.warning("verify.playwright_missing", error=str(exc))
-        return False, False, ""
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            try:
-                page = browser.new_page(user_agent=_UA)
-                page.set_default_timeout(30000)
-                page.goto(url, wait_until="networkidle")
-                text = page.inner_text("body")
-            finally:
-                browser.close()
+        from scrapers.trial_extraction import fetch_page
+
+        text = fetch_page(url)
     except Exception as exc:
         log.warning("verify.tier2_failed", url=url, error=str(exc))
+        return False, False, ""
+    if not text:
         return False, False, ""
     return bool(_TRIAL_MARKERS.search(text)), bool(_SIGNUP_MARKERS.search(text)), text
 
