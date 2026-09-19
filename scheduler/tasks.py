@@ -13,11 +13,11 @@ from __future__ import annotations
 from datetime import timedelta
 
 from celery.schedules import crontab
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from core.config import get_settings
 from core.logging import get_logger
-from models.base import get_sessionmaker
+from models.base import get_sessionmaker, utcnow
 from scheduler.celery_app import celery_app
 from scheduler.validation import record_validation_result, select_coupons_to_validate
 from scrapers.pipeline import expire_suspended, ingest_raw
@@ -206,6 +206,67 @@ def extract_due_trials() -> dict:
         session.close()
 
 
+@celery_app.task(name="verify_trial")
+def verify_trial(offer_id: int) -> dict:
+    """Live-verify one trial offer (Free Trials T3)."""
+    from models.models import TrialOffer
+    from validators.trial_verifier import record_verification, verify_offer
+
+    if not get_settings().trial_verification_enabled:
+        return {"offer_id": offer_id, "skipped": "trial verification disabled"}
+    session = get_sessionmaker()()
+    try:
+        offer = session.get(TrialOffer, offer_id)
+        if offer is None:
+            return {"error": "offer not found", "offer_id": offer_id}
+        outcome = verify_offer(offer, offer.tool.name)
+        record_verification(offer, outcome)
+        session.commit()
+        return {"offer_id": offer_id, "status": offer.verification_status.value,
+                "confidence": offer.confidence_score, "tier": outcome.highest_tier}
+    finally:
+        session.close()
+
+
+@celery_app.task(name="verify_due_trials")
+def verify_due_trials() -> dict:
+    """Beat sweep: live-verify trial offers that are new or gone stale.
+    Opt-in via TRIAL_VERIFICATION_ENABLED; capped per run (browser + LLM cost)."""
+    from models.enums import TrialStatus
+    from models.models import Tool, TrialOffer
+    from validators.trial_verifier import record_verification, verify_offer
+
+    settings = get_settings()
+    if not settings.trial_verification_enabled:
+        return {"skipped": "trial verification disabled"}
+
+    session = get_sessionmaker()()
+    try:
+        cutoff = utcnow() - timedelta(hours=settings.trial_reverify_hours)
+        stmt = (
+            select(TrialOffer)
+            .join(Tool)
+            .where(
+                TrialOffer.status == TrialStatus.live,
+                Tool.status == TrialStatus.live,
+                or_(TrialOffer.last_verified_at.is_(None), TrialOffer.last_verified_at < cutoff),
+            )
+            .order_by(TrialOffer.last_verified_at.asc().nulls_first())
+            .limit(15)
+        )
+        offers = session.scalars(stmt).all()
+        by_status: dict[str, int] = {}
+        for offer in offers:
+            outcome = verify_offer(offer, offer.tool.name)
+            record_verification(offer, outcome)
+            key = offer.verification_status.value
+            by_status[key] = by_status.get(key, 0) + 1
+        session.commit()
+        return {"verified_run": len(offers), "by_status": by_status}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
@@ -309,5 +370,10 @@ celery_app.conf.beat_schedule = {
     "extract-trials": {
         "task": "extract_due_trials",
         "schedule": timedelta(minutes=get_settings().trial_extract_frequency_minutes),
+    },
+    # Free Trials: live verify trial links (no-op until TRIAL_VERIFICATION_ENABLED).
+    "verify-trials": {
+        "task": "verify_due_trials",
+        "schedule": timedelta(minutes=get_settings().trial_verify_frequency_minutes),
     },
 }

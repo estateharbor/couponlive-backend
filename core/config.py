@@ -112,6 +112,11 @@ class Settings(BaseSettings):
     trial_extract_frequency_minutes: int = Field(
         720, alias="TRIAL_EXTRACT_FREQUENCY_MINUTES"      # 12h sweep of due tools
     )
+    # Live trial verification (T3). Opt-in (browser + LLM cost); the beat no-ops
+    # until enabled, mirroring the coupon validation flag.
+    trial_verification_enabled: bool = Field(False, alias="TRIAL_VERIFICATION_ENABLED")
+    trial_verify_frequency_minutes: int = Field(360, alias="TRIAL_VERIFY_FREQUENCY_MINUTES")  # 6h sweep
+    trial_reverify_hours: int = Field(72, alias="TRIAL_REVERIFY_HOURS")  # re-check cadence per offer
     # Approx USD->INR fallback when a live FX lookup isn't wired (labelled approx).
     fx_usd_inr: float = Field(83.0, alias="FX_USD_INR")
 
