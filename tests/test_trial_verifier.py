@@ -58,8 +58,10 @@ def test_tier1_http_classification():
     assert state == "alive"
     state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(404, "Page not found")))
     assert state == "dead"
-    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(200, "This plan has been discontinued")))
-    assert state == "dead"  # dead-page marker
+    # A live 200 page is "alive" even if "404"/"page not found" appears in its
+    # scripts (common on SPAs) — dead is decided by HTTP status only.
+    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(200, "<script>if(x==404)show('page not found')</script>")))
+    assert state == "alive"
     state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(403, "Forbidden")))
     assert state == "blocked"  # bot-blocked, not dead
     state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(503, "Service Unavailable")))

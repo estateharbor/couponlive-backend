@@ -40,12 +40,6 @@ _TRIAL_MARKERS = re.compile(
 _SIGNUP_MARKERS = re.compile(
     r"(sign\s?up|get started|create (an )?account|start free|try free|register)", re.IGNORECASE
 )
-_DEAD_MARKERS = re.compile(
-    r"(page not found|404|no longer available|has been discontinued|plan discontinued|"
-    r"not available in your (region|country))",
-    re.IGNORECASE,
-)
-
 _SOURCE_RELIABILITY = {
     "vendor_page": 1.0,
     "affiliate_feed": 0.9,
@@ -102,24 +96,22 @@ class VerifyOutcome:
 # -- tiers -----------------------------------------------------------------
 def tier1_http(url: str, *, session: requests.Session | None = None) -> tuple[str, str, str]:
     """(state, final_url, text) where state is:
-      "alive"   2xx and not a dead-page,
-      "dead"    404/410 or an explicit dead/discontinued marker,
+      "alive"   2xx,
+      "dead"    404/410 (the link is genuinely gone),
       "blocked" 403/429/5xx/timeout/connection error — we genuinely can't tell.
-    A blocked/transient response must NOT be treated as dead (that would hide a
-    real offer); it's inconclusive."""
+    We decide dead ONLY from the HTTP status — NOT from text in the raw HTML,
+    which on JS single-page sites often contains "404"/"page not found" in
+    scripts even when the page is perfectly alive (false positives)."""
     sess = session or requests.Session()
     try:
         r = sess.get(url, headers={"User-Agent": _UA}, timeout=30, allow_redirects=True)
     except Exception as exc:
         return "blocked", url, f"request failed: {exc}"
-    body = r.text or ""
     if r.status_code in (404, 410):
         return "dead", str(r.url), f"http {r.status_code}"
     if r.status_code >= 400:
         return "blocked", str(r.url), f"http {r.status_code}"  # 403/429/5xx: can't tell
-    if _DEAD_MARKERS.search(body[:6000]):
-        return "dead", str(r.url), "dead-page marker"
-    return "alive", str(r.url), body
+    return "alive", str(r.url), (r.text or "")
 
 
 def tier2_browser(url: str) -> tuple[bool, bool, str]:
