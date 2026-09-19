@@ -37,6 +37,11 @@ cd "$SRC"
 echo "NEXT_PUBLIC_API_URL=$API" > .env.production
 log "npm install"
 npm install --no-audit --no-fund --silent
+# Clear Next's build + Data (fetch) cache so every rebuild bakes FRESH API data.
+# Without this, Next reuses cached fetch() responses from a prior build in this
+# persistent checkout and publishes stale coupons/trials.
+log "clearing .next cache"
+rm -rf .next
 log "npm run build"
 npm run build
 
