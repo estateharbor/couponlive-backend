@@ -147,6 +147,65 @@ def sync_feedico() -> dict:
         session.close()
 
 
+@celery_app.task(name="extract_tool_trials")
+def extract_tool_trials(tool_id: int) -> dict:
+    """LLM-extract + refresh trial facts for one tool (Free Trials T2)."""
+    from core.llm import LLMUnavailable, add_tokens_today
+    from models.models import Tool
+    from scrapers.trial_extraction import extract_for_tool
+
+    session = get_sessionmaker()()
+    try:
+        tool = session.get(Tool, tool_id)
+        if tool is None:
+            return {"error": "tool not found", "tool_id": tool_id}
+        try:
+            result = extract_for_tool(session, tool)
+        except LLMUnavailable as exc:
+            log.warning("extract.skipped", reason=str(exc))
+            return {"tool_id": tool_id, "skipped": "no llm key"}
+        add_tokens_today(int(result.get("tokens", 0)))
+        return result
+    finally:
+        session.close()
+
+
+@celery_app.task(name="extract_due_trials")
+def extract_due_trials() -> dict:
+    """Beat sweep: extract trial facts for tools that need it, within the daily
+    token budget and a per-run cap. Content-hash gating makes unchanged pages
+    free (no LLM call)."""
+    from core.llm import LLMUnavailable, add_tokens_today, budget_remaining
+    from models.enums import TrialStatus
+    from models.models import Tool
+    from scrapers.trial_extraction import extract_for_tool
+
+    settings = get_settings()
+    if not (settings.gemini_api_key or settings.openai_api_key):
+        return {"skipped": "no llm key"}
+
+    session = get_sessionmaker()()
+    try:
+        tools = session.scalars(select(Tool).where(Tool.status == TrialStatus.live)).all()
+        processed = tokens = 0
+        for tool in tools:
+            if processed >= 20 or budget_remaining() <= 0:
+                break
+            try:
+                result = extract_for_tool(session, tool)
+            except LLMUnavailable:
+                break
+            used = int(result.get("tokens", 0))
+            if used:
+                add_tokens_today(used)
+                tokens += used
+                processed += 1
+        return {"tools_processed": processed, "tokens": tokens,
+                "budget_remaining": budget_remaining()}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
 def validate_coupon(self, coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
@@ -245,5 +304,10 @@ celery_app.conf.beat_schedule = {
     "sync-feedico": {
         "task": "sync_feedico",
         "schedule": timedelta(minutes=get_settings().feedico_sync_frequency_minutes),
+    },
+    # Free Trials: LLM-extract/refresh trial facts (no-op until an LLM key is set).
+    "extract-trials": {
+        "task": "extract_due_trials",
+        "schedule": timedelta(minutes=get_settings().trial_extract_frequency_minutes),
     },
 }

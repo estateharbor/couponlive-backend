@@ -94,6 +94,19 @@ class Settings(BaseSettings):
         30, alias="LINKMYDEALS_SYNC_FREQUENCY_MINUTES"
     )
 
+    # LLM extraction (Free Trials T2). Provider-agnostic: Gemini primary,
+    # OpenAI as fallback. Extraction is skipped when neither key is set.
+    gemini_api_key: str = Field("", alias="GEMINI_API_KEY")
+    openai_api_key: str = Field("", alias="OPENAI_API_KEY")
+    llm_primary_model: str = Field("gemini-2.0-flash", alias="LLM_PRIMARY_MODEL")
+    llm_fallback_model: str = Field("gpt-4o-mini", alias="LLM_FALLBACK_MODEL")
+    llm_daily_token_budget: int = Field(2_000_000, alias="LLM_DAILY_TOKEN_BUDGET")
+    trial_extract_frequency_minutes: int = Field(
+        720, alias="TRIAL_EXTRACT_FREQUENCY_MINUTES"      # 12h sweep of due tools
+    )
+    # Approx USD->INR fallback when a live FX lookup isn't wired (labelled approx).
+    fx_usd_inr: float = Field(83.0, alias="FX_USD_INR")
+
     # Alerting
     alert_webhook_url: str = Field("", alias="ALERT_WEBHOOK_URL")
     alert_min_success_rate: float = Field(0.5, alias="ALERT_MIN_SUCCESS_RATE")
