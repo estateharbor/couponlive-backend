@@ -54,23 +54,27 @@ def test_tier1_http_classification():
         def get(self, *a, **k):
             return self._r
 
-    ok, _u, _t = tv.tier1_http("https://x", session=_Sess(_Resp(200, "Start your free trial today")))
-    assert ok is True
-    ok, _u, note = tv.tier1_http("https://x", session=_Sess(_Resp(404, "Page not found")))
-    assert ok is False
-    ok, _u, note = tv.tier1_http("https://x", session=_Sess(_Resp(200, "This plan has been discontinued")))
-    assert ok is False  # dead-page marker
+    state, _u, _t = tv.tier1_http("https://x", session=_Sess(_Resp(200, "Start your free trial today")))
+    assert state == "alive"
+    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(404, "Page not found")))
+    assert state == "dead"
+    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(200, "This plan has been discontinued")))
+    assert state == "dead"  # dead-page marker
+    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(403, "Forbidden")))
+    assert state == "blocked"  # bot-blocked, not dead
+    state, _u, _n = tv.tier1_http("https://x", session=_Sess(_Resp(503, "Service Unavailable")))
+    assert state == "blocked"  # transient, not dead
 
 
 def test_verify_offer_tier2_pass(monkeypatch):
-    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: (True, url, "body"))
+    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: ("alive", url, "body"))
     monkeypatch.setattr(tv, "tier2_browser", lambda url: (True, True, "free trial ... sign up"))
     out = tv.verify_offer(_Offer(), "Foo")
     assert out.highest_tier == 2 and out.link_dead is False
 
 
 def test_verify_offer_dead_link(monkeypatch):
-    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: (False, url, "http 404"))
+    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: ("dead", url, "http 404"))
     out = tv.verify_offer(_Offer(), "Foo")
     assert out.link_dead is True and out.highest_tier == 0
     o = _Offer()
@@ -78,8 +82,18 @@ def test_verify_offer_dead_link(monkeypatch):
     assert o.verification_status is TrialVerificationStatus.broken and o.confidence_score == 0.0
 
 
+def test_verify_offer_blocked_is_inconclusive_not_broken(monkeypatch):
+    # 403/503 must NOT mark a real offer broken — it stays visible as unverified.
+    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: ("blocked", url, "http 403"))
+    out = tv.verify_offer(_Offer(), "Foo")
+    assert out.inconclusive is True and out.link_dead is False
+    o = _Offer()
+    tv.record_verification(o, out)
+    assert o.verification_status is TrialVerificationStatus.unverified  # not broken
+
+
 def test_verify_offer_tier3_confirms(monkeypatch):
-    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: (True, url, "body"))
+    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: ("alive", url, "body"))
     monkeypatch.setattr(tv, "tier2_browser", lambda url: (False, False, "ambiguous page"))
     monkeypatch.setattr(tv, "tier3_llm", lambda text, tool, title: (True, "llm confirmed"))
     out = tv.verify_offer(_Offer(), "Foo")
@@ -90,7 +104,7 @@ def test_verify_offer_tier3_confirms(monkeypatch):
 
 
 def test_verify_offer_tier1_only_when_unconfirmed(monkeypatch):
-    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: (True, url, "body"))
+    monkeypatch.setattr(tv, "tier1_http", lambda url, session=None: ("alive", url, "body"))
     monkeypatch.setattr(tv, "tier2_browser", lambda url: (False, False, "ambiguous"))
     monkeypatch.setattr(tv, "tier3_llm", lambda text, tool, title: (False, "unconfirmed"))
     out = tv.verify_offer(_Offer(), "Foo")

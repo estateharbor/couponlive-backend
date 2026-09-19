@@ -92,26 +92,34 @@ def status_for(score: float) -> TrialVerificationStatus:
 
 @dataclass
 class VerifyOutcome:
-    highest_tier: int          # 0 = link dead
-    link_dead: bool
+    highest_tier: int          # 0 = link dead or unverifiable
+    link_dead: bool            # True only when the link is genuinely gone (404/dead)
     note: str
+    inconclusive: bool = False  # blocked/transient — couldn't confirm alive OR dead
     final_url: str | None = None
 
 
 # -- tiers -----------------------------------------------------------------
-def tier1_http(url: str, *, session: requests.Session | None = None) -> tuple[bool, str, str]:
-    """(ok, final_url, text) — ok False when the link is dead/404/discontinued."""
+def tier1_http(url: str, *, session: requests.Session | None = None) -> tuple[str, str, str]:
+    """(state, final_url, text) where state is:
+      "alive"   2xx and not a dead-page,
+      "dead"    404/410 or an explicit dead/discontinued marker,
+      "blocked" 403/429/5xx/timeout/connection error — we genuinely can't tell.
+    A blocked/transient response must NOT be treated as dead (that would hide a
+    real offer); it's inconclusive."""
     sess = session or requests.Session()
     try:
         r = sess.get(url, headers={"User-Agent": _UA}, timeout=30, allow_redirects=True)
     except Exception as exc:
-        return False, url, f"request failed: {exc}"
+        return "blocked", url, f"request failed: {exc}"
     body = r.text or ""
+    if r.status_code in (404, 410):
+        return "dead", str(r.url), f"http {r.status_code}"
     if r.status_code >= 400:
-        return False, str(r.url), f"http {r.status_code}"
+        return "blocked", str(r.url), f"http {r.status_code}"  # 403/429/5xx: can't tell
     if _DEAD_MARKERS.search(body[:6000]):
-        return False, str(r.url), "dead-page marker"
-    return True, str(r.url), body
+        return "dead", str(r.url), "dead-page marker"
+    return "alive", str(r.url), body
 
 
 def tier2_browser(url: str) -> tuple[bool, bool, str]:
@@ -159,9 +167,14 @@ def tier3_llm(text: str, tool_name: str, title: str) -> tuple[bool, str]:
 
 # -- orchestration ---------------------------------------------------------
 def verify_offer(offer: TrialOffer, tool_name: str) -> VerifyOutcome:
-    ok, final_url, body = tier1_http(offer.signup_url)
-    if not ok:
+    state, final_url, body = tier1_http(offer.signup_url)
+    if state == "dead":
         return VerifyOutcome(highest_tier=0, link_dead=True, note=f"tier1: {body[:80]}", final_url=final_url)
+    if state == "blocked":
+        # Bot-blocked / transient — can't confirm alive or dead. Stay honest:
+        # inconclusive (offer stays visible as unverified, not hidden as broken).
+        return VerifyOutcome(highest_tier=0, link_dead=False, inconclusive=True,
+                             note=f"tier1: {body[:80]}", final_url=final_url)
 
     trial_text, signup, page_text = tier2_browser(offer.signup_url)
     if trial_text and signup:
@@ -182,6 +195,12 @@ def record_verification(offer: TrialOffer, outcome: VerifyOutcome) -> None:
     if outcome.link_dead:
         offer.verification_status = TrialVerificationStatus.broken
         offer.confidence_score = 0.0
+        offer.last_verified_at = _now()
+        return
+    if outcome.inconclusive:
+        # Couldn't confirm (bot-blocked/transient). Don't claim verified, don't
+        # hide it as broken — leave it visible as "not verified yet".
+        offer.verification_status = TrialVerificationStatus.unverified
         offer.last_verified_at = _now()
         return
     score = compute_trial_confidence(outcome.highest_tier, offer.source, hours_since_pass=0.0)
