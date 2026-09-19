@@ -22,8 +22,15 @@ def list_merchants(db: Session = Depends(get_db)):
     settings = get_settings()
     fresh_cutoff = utcnow() - timedelta(hours=settings.serve_freshness_hours)
 
+    # "coupon_count" must match what the listing actually renders — USABLE codes
+    # (a code present, status valid/unverified) — not every row incl. expired/
+    # code-less. Otherwise directory cards & headings overstate vs the page.
     total_sub = (
         select(Coupon.merchant_id, func.count().label("total"))
+        .where(
+            Coupon.code.is_not(None),
+            Coupon.status.in_([CouponStatus.valid, CouponStatus.unverified]),
+        )
         .group_by(Coupon.merchant_id)
         .subquery()
     )

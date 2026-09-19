@@ -93,9 +93,12 @@ def test_listing_mode_directory(client, db_session):
 def test_merchants_counts(client):
     r = client.get("/merchants")
     by_name = {m["name"]: m for m in r.json()}
+    # coupon_count = USABLE codes (code present, valid/unverified) — matches what
+    # the listing renders. Myntra's two valid coded coupons count; Amazon's only
+    # coupon is invalid, so it has 0 usable (not shown as inventory).
     assert by_name["Myntra"]["coupon_count"] == 2
     assert by_name["Myntra"]["valid_coupon_count"] == 1   # only the fresh one
-    assert by_name["Amazon"]["coupon_count"] == 1
+    assert by_name["Amazon"]["coupon_count"] == 0         # its lone coupon is invalid
     assert by_name["Amazon"]["valid_coupon_count"] == 0
 
 
