@@ -6,7 +6,7 @@ from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import case, desc, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from core.config import get_settings
 from core.confidence import compute_confidence
@@ -39,7 +39,8 @@ def list_coupons(
     — real, usable codes whether or not they've been checkout-verified yet —
     each with its real status, so the UI shows "Verified" only for tested ones."""
     settings = get_settings()
-    stmt = select(Coupon).join(Merchant)
+    # Eager-load provenance so we can expose the affiliate deeplink (source_url).
+    stmt = select(Coupon).join(Merchant).options(selectinload(Coupon.sources))
 
     if merchant:
         stmt = stmt.where(Merchant.normalized_name == normalize_merchant_name(merchant))
@@ -74,6 +75,11 @@ def list_coupons(
 def _to_out(c: Coupon) -> CouponOut:
     out = CouponOut.model_validate(c)
     out.merchant_name = c.merchant.name if c.merchant else None
+    # Representative affiliate deeplink (most recently seen) — the click-out URL
+    # that actually earns commission. None if we only have provenance-less rows.
+    urls = sorted((s for s in c.sources if s.source_url),
+                  key=lambda s: s.last_seen_at, reverse=True)
+    out.url = urls[0].source_url if urls else None
     return out
 
 

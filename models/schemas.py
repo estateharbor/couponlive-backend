@@ -69,6 +69,7 @@ class CouponOut(BaseModel):
     first_seen: datetime
     last_seen: datetime
     last_validated_at: datetime | None
+    url: str | None = None  # affiliate deeplink for the click-out (earns commission)
 
 
 class DealOut(BaseModel):
