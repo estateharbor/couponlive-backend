@@ -130,6 +130,12 @@ class Settings(BaseSettings):
         720, alias="REMINDER_CHECK_FREQUENCY_MINUTES"     # 12h — catches 3-day & 1-day marks
     )
 
+    # Telegram channel auto-poster (traffic). No-op until both are set.
+    telegram_bot_token: str = Field("", alias="TELEGRAM_BOT_TOKEN")
+    telegram_channel_id: str = Field("", alias="TELEGRAM_CHANNEL_ID")  # @handle or -100...
+    telegram_post_frequency_minutes: int = Field(180, alias="TELEGRAM_POST_FREQUENCY_MINUTES")
+    telegram_post_max_per_run: int = Field(5, alias="TELEGRAM_POST_MAX_PER_RUN")
+
     # Alerting
     alert_webhook_url: str = Field("", alias="ALERT_WEBHOOK_URL")
     alert_min_success_rate: float = Field(0.5, alias="ALERT_MIN_SUCCESS_RATE")

@@ -267,6 +267,23 @@ def verify_due_trials() -> dict:
         session.close()
 
 
+@celery_app.task(name="post_new_to_telegram")
+def post_new_to_telegram() -> dict:
+    """Beat: post newly-verified coupons + trials to the Telegram channel
+    (no-op until TELEGRAM_BOT_TOKEN + TELEGRAM_CHANNEL_ID are set)."""
+    from core.telegram import is_posted, mark_posted, send_message, telegram_configured
+    from scheduler.telegram_poster import post_new
+
+    if not telegram_configured():
+        return {"skipped": "telegram not configured"}
+    session = get_sessionmaker()()
+    try:
+        return post_new(session, send=send_message, is_posted=is_posted,
+                        mark_posted=mark_posted, limit=get_settings().telegram_post_max_per_run)
+    finally:
+        session.close()
+
+
 @celery_app.task(name="send_due_reminders")
 def send_due_reminders() -> dict:
     """Beat: email cancel-reminders whose window is due; expire past ones.
@@ -395,5 +412,10 @@ celery_app.conf.beat_schedule = {
     "send-reminders": {
         "task": "send_due_reminders",
         "schedule": timedelta(minutes=get_settings().reminder_check_frequency_minutes),
+    },
+    # Traffic: post newly-verified coupons/trials to Telegram (no-op until keyed).
+    "post-telegram": {
+        "task": "post_new_to_telegram",
+        "schedule": timedelta(minutes=get_settings().telegram_post_frequency_minutes),
     },
 }
