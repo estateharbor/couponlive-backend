@@ -48,9 +48,12 @@ def _priority_for(coupon: Coupon, revalidate_after: timedelta) -> int | None:
     """Return a priority (lower = sooner) or None if not due for validation."""
     if not coupon.code:
         return None
-    if coupon.last_validated_at is None:
-        return 0  # newly ingested, never validated
-    age = utcnow() - _aware(coupon.last_validated_at)
+    # Pace by last ATTEMPT (last_checked_at), not last confirmation — so a code
+    # that keeps coming back inconclusive isn't re-picked every single batch.
+    last_checked = coupon.last_checked_at or coupon.last_validated_at
+    if last_checked is None:
+        return 0  # newly ingested, never checked
+    age = utcnow() - _aware(last_checked)
     if coupon.status is CouponStatus.valid and coupon.merchant.priority > 0:
         return 1 if age >= revalidate_after else None
     return 2 if age >= revalidate_after else None
@@ -78,8 +81,12 @@ def select_coupons_to_validate(session: Session, limit: int = 50) -> list[tuple[
         if prio is not None:
             scored.append((prio, c))
 
-    # Sort by priority, then oldest-validated first (None treated as oldest).
-    scored.sort(key=lambda t: (t[0], _aware(t[1].last_validated_at) if t[1].last_validated_at else utcnow() - timedelta(days=3650)))
+    # Sort by priority, then oldest-checked first (never-checked treated as oldest).
+    def _checked_key(c: Coupon):
+        last = c.last_checked_at or c.last_validated_at
+        return _aware(last) if last else utcnow() - timedelta(days=3650)
+
+    scored.sort(key=lambda t: (t[0], _checked_key(t[1])))
     return scored[:limit]
 
 
@@ -105,11 +112,23 @@ def record_validation_result(
             response_snapshot=result.response_snapshot,
         )
     )
+    # Every attempt updates last_checked_at (scheduler pacing).
+    coupon.last_checked_at = result.checked_at
+
+    if result.result is ValidationResultEnum.unverifiable:
+        # Inconclusive (site blocked us / checkout unreachable) — NOT evidence the
+        # code changed. Don't confirm, don't refresh the "Verified" clock, and
+        # don't slam a previously-valid code's confidence down to the 0.40 floor.
+        # If we keep failing to re-confirm, the serve-freshness window (which
+        # keys off last_validated_at) ages it out on its own.
+        return
+
+    # Decisive result: it's a real confirmation, so update status + confidence
+    # and stamp last_validated_at.
     if result.result is ValidationResultEnum.valid:
         coupon.status = CouponStatus.valid
     elif result.result is ValidationResultEnum.invalid:
         coupon.status = CouponStatus.invalid
-    # unverifiable: leave status unchanged, but we still record the attempt.
 
     coupon.last_validated_at = result.checked_at
     positive, total = _feedback_counts(session, coupon.id)

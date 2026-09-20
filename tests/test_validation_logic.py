@@ -87,6 +87,41 @@ def test_record_result_updates_status_confidence_and_logs(db_session):
     assert db_session.scalar(select(func.count()).select_from(ValidationLog)) == 1
 
 
+def test_unverifiable_does_not_taint_a_valid_code(db_session):
+    """An inconclusive re-check must NOT flip status, refresh the 'Verified'
+    clock, or slam confidence to the 0.40 floor — it only records the attempt.
+    (This is the 'Verified 4h ago' + 'Low confidence' contradiction fixed.)"""
+    coupon = _mk_coupon(db_session, code="KUSHAL200")
+    db_session.commit()
+
+    # First: a real confirmation -> valid, high confidence, stamped.
+    confirmed_at = _now() - timedelta(hours=6)
+    record_validation_result(
+        db_session, coupon,
+        ValidationResult(result=ValidationResultEnum.valid, checked_at=confirmed_at),
+    )
+    db_session.commit()
+    assert coupon.status is CouponStatus.valid
+    assert coupon.confidence_score == compute_confidence(ValidationResultEnum.valid)
+    validated_snapshot = coupon.last_validated_at
+
+    # Then: an inconclusive re-check (site blocked us). Nothing about the
+    # confirmation should change; only last_checked_at advances.
+    later = _now()
+    record_validation_result(
+        db_session, coupon,
+        ValidationResult(result=ValidationResultEnum.unverifiable, checked_at=later),
+    )
+    db_session.commit()
+
+    assert coupon.status is CouponStatus.valid                      # not demoted
+    assert coupon.last_validated_at == validated_snapshot           # 'Verified' clock intact
+    assert coupon.confidence_score == compute_confidence(ValidationResultEnum.valid)  # not 0.40
+    assert coupon.last_checked_at == later                          # attempt still recorded
+    # Both attempts are logged.
+    assert db_session.scalar(select(func.count()).select_from(ValidationLog)) == 2
+
+
 def test_run_batch_with_injected_validator(db_session):
     _mk_coupon(db_session, code="GOOD", merchant="myntra")
     _mk_coupon(db_session, code="BAD", merchant="nykaa")

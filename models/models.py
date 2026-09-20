@@ -133,7 +133,14 @@ class Coupon(Base, TimestampMixin):
     )
     # 0.0–1.0. Blend of validation history + crowd feedback + recency.
     confidence_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    # last_validated_at = last time we CONFIRMED the code (a valid/invalid result).
+    # Drives the "Verified {ago}" badge + the serve-freshness window, so an
+    # inconclusive re-check must NOT touch it (it isn't a confirmation).
     last_validated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # last_checked_at = last time we ATTEMPTED a check (any result incl.
+    # unverifiable). Drives scheduler pacing so a blocked/inconclusive code
+    # doesn't get retried every batch, without faking a fresh verification.
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     merchant: Mapped["Merchant"] = relationship(back_populates="coupons")
     sources: Mapped[list["CouponSource"]] = relationship(
