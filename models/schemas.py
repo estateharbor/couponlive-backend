@@ -70,6 +70,10 @@ class CouponOut(BaseModel):
     last_seen: datetime
     last_validated_at: datetime | None
     url: str | None = None  # affiliate deeplink for the click-out (earns commission)
+    # Crowd feedback tallies so the client can show an HONEST denominator
+    # ("3 of 4 said it worked") instead of a bare percentage with no sample size.
+    feedback_up: int = 0
+    feedback_total: int = 0
 
 
 class DealOut(BaseModel):
@@ -97,6 +101,7 @@ class MerchantOut(BaseModel):
     website: str | None
     coupon_count: int = 0
     valid_coupon_count: int = 0
+    updated_at: datetime | None = None  # last time this merchant row changed (sitemap lastmod)
 
 
 # --- Free Trials vertical ------------------------------------------------

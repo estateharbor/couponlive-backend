@@ -39,8 +39,13 @@ def list_coupons(
     — real, usable codes whether or not they've been checkout-verified yet —
     each with its real status, so the UI shows "Verified" only for tested ones."""
     settings = get_settings()
-    # Eager-load provenance so we can expose the affiliate deeplink (source_url).
-    stmt = select(Coupon).join(Merchant).options(selectinload(Coupon.sources))
+    # Eager-load provenance (affiliate deeplink) + crowd feedback (honest vote
+    # denominator), so neither is an N+1 across the listing.
+    stmt = (
+        select(Coupon)
+        .join(Merchant)
+        .options(selectinload(Coupon.sources), selectinload(Coupon.feedback))
+    )
 
     if merchant:
         stmt = stmt.where(Merchant.normalized_name == normalize_merchant_name(merchant))
@@ -80,6 +85,10 @@ def _to_out(c: Coupon) -> CouponOut:
     urls = sorted((s for s in c.sources if s.source_url),
                   key=lambda s: s.last_seen_at, reverse=True)
     out.url = urls[0].source_url if urls else None
+    # Real crowd-feedback tallies (no votes -> 0/0, so the client shows model
+    # confidence instead of a fake "% of users worked").
+    out.feedback_total = len(c.feedback)
+    out.feedback_up = sum(1 for f in c.feedback if f.worked)
     return out
 
 

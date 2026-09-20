@@ -102,6 +102,33 @@ def test_merchants_counts(client):
     assert by_name["Amazon"]["valid_coupon_count"] == 0
 
 
+def test_merchant_count_matches_listing(client):
+    """Audit invariant: a merchant's advertised coupon_count must equal the number
+    of usable codes the listing actually renders for it. If these drift, the
+    directory overstates inventory — this test blocks that regression."""
+    merchants = client.get("/merchants").json()
+    for m in merchants:
+        listed = client.get(
+            "/coupons", params={"listing": True, "merchant": m["name"], "limit": 200}
+        ).json()
+        assert m["coupon_count"] == len(listed), (
+            f'{m["name"]}: coupon_count={m["coupon_count"]} but listing rendered {len(listed)}'
+        )
+
+
+def test_coupon_feedback_tallies_exposed(client, db_session):
+    """CouponOut carries real vote tallies (0/0 when no votes) so the client can
+    show an honest denominator instead of a bare percentage."""
+    rows = client.get("/coupons", params={"listing": True}).json()
+    fresh = next(c for c in rows if c["code"] == "FRESH20")
+    assert fresh["feedback_up"] == 0 and fresh["feedback_total"] == 0  # no votes yet
+
+    client.post(f"/coupons/{fresh['id']}/feedback", json={"worked": True})
+    rows = client.get("/coupons", params={"listing": True}).json()
+    fresh = next(c for c in rows if c["code"] == "FRESH20")
+    assert fresh["feedback_up"] == 1 and fresh["feedback_total"] == 1
+
+
 def test_feedback_updates_confidence_and_dedupes(client):
     cid = client.get("/coupons").json()[0]["id"]
     r1 = client.post(f"/coupons/{cid}/feedback", json={"worked": False})
