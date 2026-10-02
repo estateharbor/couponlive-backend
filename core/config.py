@@ -94,6 +94,18 @@ class Settings(BaseSettings):
     admitad_client_id: str = Field("", alias="ADMITAD_CLIENT_ID")
     admitad_client_secret: str = Field("", alias="ADMITAD_CLIENT_SECRET")
     vcommission_api_key: str = Field("", alias="VCOMMISSION_API_KEY")
+    # Involve Asia (India + SE Asia: Myntra, Nykaa, Klook…). Auth is a two-step
+    # flow: POST key+secret to /authenticate -> bearer token, then call the
+    # Offers/Deeplink APIs. Endpoint env-overridable to correct against the live
+    # response when the adapter is built.
+    involve_asia_api_key: str = Field("", alias="INVOLVE_ASIA_API_KEY")
+    involve_asia_api_secret: str = Field("", alias="INVOLVE_ASIA_API_SECRET")
+    involve_asia_api_url: str = Field(
+        "https://api.involve.asia/api", alias="INVOLVE_ASIA_API_URL"
+    )
+    involve_asia_sync_frequency_minutes: int = Field(
+        60, alias="INVOLVE_ASIA_SYNC_FREQUENCY_MINUTES"
+    )
 
     # LinkMyDeals coupon-feed API (structured coupon aggregator)
     linkmydeals_api_url: str = Field(
