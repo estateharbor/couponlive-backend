@@ -98,7 +98,10 @@ class Settings(BaseSettings):
     # of what the app was granted; website id optionally scopes coupons/deeplinks.
     admitad_api_url: str = Field("https://api.admitad.com", alias="ADMITAD_API_URL")
     admitad_scope: str = Field(
-        "coupons coupons_for_website public_data advertisers websites",
+        # Only scopes the app is granted (advertisers/deeplink_generator/banners
+        # are NOT, and requesting them returns 401 invalid_scope). goto_link in
+        # the coupons response already gives the affiliate deeplink.
+        "coupons coupons_for_website public_data websites",
         alias="ADMITAD_SCOPE",
     )
     admitad_website_id: str = Field("", alias="ADMITAD_WEBSITE_ID")  # optional ad-space id
