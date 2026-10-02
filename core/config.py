@@ -93,6 +93,18 @@ class Settings(BaseSettings):
     earnkaro_api_key: str = Field("", alias="EARNKARO_API_KEY")
     admitad_client_id: str = Field("", alias="ADMITAD_CLIENT_ID")
     admitad_client_secret: str = Field("", alias="ADMITAD_CLIENT_SECRET")
+    # Admitad (Mitgo): OAuth2 client_credentials -> bearer token, then /coupons/.
+    # goto_link in each coupon is the affiliate deeplink. Scope must be a subset
+    # of what the app was granted; website id optionally scopes coupons/deeplinks.
+    admitad_api_url: str = Field("https://api.admitad.com", alias="ADMITAD_API_URL")
+    admitad_scope: str = Field(
+        "coupons coupons_for_website public_data advertisers websites",
+        alias="ADMITAD_SCOPE",
+    )
+    admitad_website_id: str = Field("", alias="ADMITAD_WEBSITE_ID")  # optional ad-space id
+    admitad_sync_frequency_minutes: int = Field(
+        120, alias="ADMITAD_SYNC_FREQUENCY_MINUTES"
+    )
     vcommission_api_key: str = Field("", alias="VCOMMISSION_API_KEY")
     # vCommission runs on Trackier. apiKey auth (header X-Api-Key + ?apiKey=).
     # Coupons/deals carry only campaign_id; the affiliate tracking_link comes from

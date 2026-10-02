@@ -187,6 +187,37 @@ def sync_vcommission() -> dict:
         session.close()
 
 
+@celery_app.task(name="sync_admitad")
+def sync_admitad() -> dict:
+    """Full pull of the Admitad (Mitgo) coupons feed -> pipeline.
+
+    OAuth2 client_credentials -> token -> /coupons/. promocode → code, goto_link →
+    affiliate click-out. New codes for validator-backed merchants get picked up by
+    `enqueue_revalidations`.
+    """
+    from scrapers.admitad_feed import AdmitadFeedScraper, AuthError, MissingCredentials
+
+    session = get_sessionmaker()()
+    try:
+        scraper = AdmitadFeedScraper()
+        try:
+            offers = scraper.scrape()
+        except MissingCredentials as exc:
+            log.warning("admitad.skipped", reason=str(exc))
+            return {"source": "Admitad", "skipped": "no credentials"}
+        except AuthError as exc:
+            log.warning("admitad.auth_failed", reason=str(exc))
+            return {"source": "Admitad", "error": "auth failed"}
+
+        summary = ingest_raw(session, "Admitad", offers)
+        return {"source": "Admitad", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "raw": summary.raw_count,
+                "errors": len(summary.errors),
+                "sample_error": summary.errors[0] if summary.errors else None}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sync_feedico")
 def sync_feedico() -> dict:
     """Full pull of the Feedico coupon catalog -> pipeline (codes; discovery-only,
@@ -466,6 +497,11 @@ celery_app.conf.beat_schedule = {
     "sync-vcommission": {
         "task": "sync_vcommission",
         "schedule": timedelta(minutes=get_settings().vcommission_sync_frequency_minutes),
+    },
+    # Admitad (Mitgo) coupons sync (global + India merchants).
+    "sync-admitad": {
+        "task": "sync_admitad",
+        "schedule": timedelta(minutes=get_settings().admitad_sync_frequency_minutes),
     },
     # Feedico coupon-catalog sync (slow cadence — free tier is 1000 req/month).
     "sync-feedico": {

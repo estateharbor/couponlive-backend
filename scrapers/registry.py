@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from scrapers.base import BaseScraper
+from scrapers.admitad_feed import AdmitadFeedScraper
 from scrapers.cuelinks_feed import CuelinksFeedScraper
 from scrapers.feedico_feed import FeedicoFeedScraper
 from scrapers.desidime import DesidimeScraper
@@ -27,6 +28,7 @@ SCRAPER_REGISTRY: dict[str, Callable[[], BaseScraper]] = {
     FeedicoFeedScraper.source_name: lambda: FeedicoFeedScraper(),
     InvolveAsiaFeedScraper.source_name: lambda: InvolveAsiaFeedScraper(),
     VCommissionFeedScraper.source_name: lambda: VCommissionFeedScraper(),
+    AdmitadFeedScraper.source_name: lambda: AdmitadFeedScraper(),
 }
 
 
