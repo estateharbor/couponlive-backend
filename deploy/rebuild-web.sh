@@ -5,7 +5,7 @@
 # run. Publishes with an atomic swap so the live site never serves a half-copy.
 #
 #   Manual run:  bash /opt/couponlive/backend/deploy/rebuild-web.sh
-#   Cron (6h):   0 */6 * * * bash /opt/couponlive/backend/deploy/rebuild-web.sh >> /var/log/couponlive-web-rebuild.log 2>&1
+#   Cron (1h):   0 * * * * bash /opt/couponlive/backend/deploy/rebuild-web.sh >> /var/log/couponlive-web-rebuild.log 2>&1
 set -euo pipefail
 
 REPO="${WEB_REPO:-https://github.com/estateharbor/couponlive-website.git}"
@@ -20,6 +20,12 @@ done
 export PATH
 
 log() { echo "[rebuild-web $(date -u +%FT%TZ)] $*"; }
+
+# One rebuild at a time: the hourly cron and a manual/update.sh run can overlap,
+# and two builds in the same checkout would clobber each other. Wait for the
+# other run to finish (it publishes fresh data, so ours is then still useful).
+exec 9>/tmp/couponlive-rebuild-web.lock
+flock 9
 
 command -v npm >/dev/null 2>&1 || { log "ERROR: npm not found on PATH ($PATH)"; exit 1; }
 
