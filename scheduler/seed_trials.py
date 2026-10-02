@@ -16,7 +16,7 @@ from sqlalchemy import select
 from core.logging import get_logger
 from models.base import get_sessionmaker
 from models.enums import TrialOfferType, TrialStatus, TrialVerificationStatus
-from models.models import Tool, TrialOffer
+from models.models import Tool, TrialOffer, TrialReminder
 
 log = get_logger("seed.trials")
 
@@ -305,6 +305,36 @@ RETIRE: list[tuple[str, str]] = [
 ]
 
 
+def _offer_rank(o: TrialOffer) -> tuple:
+    """Higher is better: verified first, then most recently verified, then oldest id."""
+    verified = o.verification_status == TrialVerificationStatus.verified
+    ts = o.last_verified_at.timestamp() if o.last_verified_at else 0.0
+    return (verified, ts, -o.id)
+
+
+def dedupe_offers(session) -> int:
+    """Collapse offers that share a tool + title (case/space-insensitive) into one,
+    keeping the best-verified copy and moving any reminders onto it. Returns the
+    number of duplicate rows removed."""
+    groups: dict[tuple[int, str], list[TrialOffer]] = {}
+    for o in session.scalars(select(TrialOffer)):
+        key = (o.tool_id, " ".join((o.title or "").lower().split()))
+        groups.setdefault(key, []).append(o)
+    removed = 0
+    for offers in groups.values():
+        if len(offers) < 2:
+            continue
+        offers.sort(key=_offer_rank, reverse=True)
+        keep, dupes = offers[0], offers[1:]
+        for d in dupes:
+            for r in session.scalars(select(TrialReminder).where(TrialReminder.offer_id == d.id)):
+                r.offer_id = keep.id
+            session.delete(d)
+            removed += 1
+    session.flush()
+    return removed
+
+
 def main() -> None:
     session = get_sessionmaker()()
     created_tools = created_offers = updated = retired = 0
@@ -324,6 +354,7 @@ def main() -> None:
                 session.delete(stale)
                 retired += 1
         session.flush()
+        deduped = dedupe_offers(session)
 
         for row in SEED:
             tool = session.scalar(select(Tool).where(Tool.slug == row["slug"]))
@@ -369,7 +400,8 @@ def main() -> None:
             offer.status = TrialStatus.live
         session.commit()
         print(f"seed done — tools created: {created_tools}, offers created: {created_offers}, "
-              f"offers updated: {updated}, stale offers retired: {retired}")
+              f"offers updated: {updated}, stale offers retired: {retired}, "
+              f"duplicates removed: {deduped}")
     finally:
         session.close()
 

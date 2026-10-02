@@ -84,3 +84,48 @@ def test_map_type_falls_back_to_unknown():
     from models.enums import TrialOfferType
     assert te._map_type("no_card_trial") is TrialOfferType.no_card_trial
     assert te._map_type("Price-Off Nonsense") is TrialOfferType.unknown
+
+
+def test_same_title_new_type_updates_instead_of_duplicating(db_session, tool, monkeypatch):
+    # The LLM labels the same offer with a different type on a later run — that
+    # must update the existing row, not add a second "Canva Pro — 30 days free".
+    _patch(monkeypatch)
+    te.extract_for_tool(db_session, tool, force=True)
+    relabelled = {**FAKE_LLM, "offers": [{**FAKE_LLM["offers"][0],
+                                          "offer_type": "freemium_premium_trial"}]}
+    _patch(monkeypatch, llm=relabelled)
+    te.extract_for_tool(db_session, tool, force=True)
+
+    same = db_session.query(TrialOffer).filter_by(
+        tool_id=tool.id, title="Canva Pro — 30 days free").all()
+    assert len(same) == 1
+
+
+def test_seed_dedupe_keeps_verified_and_moves_reminders(db_session, tool):
+    from datetime import date, datetime, timezone
+
+    from models.enums import TrialOfferType
+    from models.models import TrialReminder
+    from scheduler.seed_trials import dedupe_offers
+
+    older = TrialOffer(tool_id=tool.id, title="Get Notion free", signup_url="https://x",
+                       offer_type=TrialOfferType.no_card_trial,
+                       verification_status=TrialVerificationStatus.verified,
+                       last_verified_at=datetime(2026, 9, 29, tzinfo=timezone.utc))
+    newer = TrialOffer(tool_id=tool.id, title="Get  notion FREE", signup_url="https://x",
+                       offer_type=TrialOfferType.freemium_premium_trial,
+                       verification_status=TrialVerificationStatus.verified,
+                       last_verified_at=datetime(2026, 10, 1, tzinfo=timezone.utc))
+    other = TrialOffer(tool_id=tool.id, title="Something else", signup_url="https://x",
+                       offer_type=TrialOfferType.unknown)
+    db_session.add_all([older, newer, other])
+    db_session.flush()
+    rem = TrialReminder(email="a@example.com", offer_id=older.id, tool_name="Notion",
+                        ends_on=date(2026, 11, 1), token="t0k3n")
+    db_session.add(rem)
+    db_session.flush()
+
+    assert dedupe_offers(db_session) == 1
+    left = db_session.query(TrialOffer).filter_by(tool_id=tool.id).all()
+    assert {o.id for o in left} == {newer.id, other.id}  # most recently verified kept
+    assert rem.offer_id == newer.id

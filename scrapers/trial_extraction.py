@@ -163,8 +163,10 @@ def extract_for_tool(
 
     page_norm = _norm(text)
     by_type: dict[TrialOfferType, TrialOffer] = {}
+    by_title: dict[str, TrialOffer] = {}
     for o in existing:
         by_type.setdefault(o.offer_type, o)
+        by_title.setdefault(_norm(o.title), o)
 
     applied = dropped = 0
     for eo in result.offers:
@@ -173,7 +175,11 @@ def extract_for_tool(
             dropped += 1
             continue
         otype = _map_type(eo.offer_type)
-        offer = by_type.get(otype)
+        # Match by title first: the LLM can label the same offer with a
+        # different type on a later run, which used to create a duplicate.
+        offer = by_title.get(_norm(eo.title)) if eo.title else None
+        if offer is None:
+            offer = by_type.get(otype)
         if offer is None:
             offer = TrialOffer(tool_id=tool.id, offer_type=otype,
                                title=eo.title or f"{tool.name} free trial",
@@ -182,6 +188,7 @@ def extract_for_tool(
             by_type[otype] = offer
         if eo.title:
             offer.title = eo.title
+            by_title[_norm(eo.title)] = offer
         offer.offer_type = otype
         offer.trial_days = eo.trial_days
         offer.credit_amount = eo.credit_amount
