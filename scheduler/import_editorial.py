@@ -58,6 +58,8 @@ MERCHANT_HOME: dict[str, str] = {
     "pizzahut": "https://www.pizzahut.co.in",
     "burgerking": "https://www.burgerking.in",
     "kfc": "https://online.kfc.co.in",
+    "amazon": "https://www.amazon.in",
+    "flipkart": "https://www.flipkart.com",
 }
 
 # Wallet/bank intermediaries (and "via <platform>" combos) that must not be
@@ -117,12 +119,15 @@ def _keep(row: dict) -> str | None:
     if cat == "ai":
         return None  # free-trials handled in seed_trials.py
     if any(mark in store for mark in _SKIP_STORE_MARKERS):
-        return None  # wallet/bank intermediaries
+        return None  # wallet/bank intermediaries (PhonePe/CRED/Paytm/"via" combos)
     if code_type == "code" and (row.get("code") or "").strip():
         return "code"
-    if code_type == "no_code" and cat == "food":
-        return "deal"  # direct-merchant, code-less food deal
-    return None  # bank/UPI/sale-event announcements — skipped
+    # Code-less, direct-merchant offers → deals (shown as neutral "Deal" cards,
+    # never Verified). Covers food deals AND shopping offers like the Amazon.in /
+    # Flipkart festive/bank deals that fill otherwise-empty mega-store pages.
+    if code_type == "no_code" and cat in ("food", "shopping"):
+        return "deal"
+    return None  # UPI/standalone-bank rows — skipped
 
 
 def build_raw(rows: list[dict], now: datetime) -> list[RawCoupon]:

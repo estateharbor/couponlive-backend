@@ -39,8 +39,10 @@ def test_keep_rules_skip_ai_bank_and_wallet():
     assert _keep(_row(category="ai", code_type="no_code", store="ChatGPT", code="")) is None
     assert _keep(_row(code_type="no_code", category="upi", store="PhonePe", code="")) is None
     assert _keep(_row(code_type="no_code", category="food", store="KFC (via Swiggy)", code="")) is None
-    # A shopping sale-event announcement (no code) is skipped.
-    assert _keep(_row(code_type="no_code", category="shopping", store="Amazon.in", code="")) is None
+    # Code-less shopping offers (Amazon.in / Flipkart festive & bank deals) ARE
+    # imported as deals to fill otherwise-empty mega-store pages.
+    assert _keep(_row(code_type="no_code", category="shopping", store="Amazon.in", code="")) == "deal"
+    assert _keep(_row(code_type="no_code", category="shopping", store="Flipkart", code="")) == "deal"
 
 
 def test_build_raw_sets_merchant_homepage_not_aggregator():
@@ -49,6 +51,25 @@ def test_build_raw_sets_merchant_homepage_not_aggregator():
     # The click-out is the merchant's own site, never the GrabOn source we scraped.
     assert raws[0].source_url == "https://www.ajio.com"
     assert "grabon" not in (raws[0].source_url or "")
+
+
+def test_amazon_flipkart_no_code_deals_import_with_homepage():
+    rows = [
+        _row(store="Amazon.in", category="shopping", code_type="no_code", code="",
+             headline="10% instant discount with SBI cards",
+             description="10% instant discount with SBI cards at checkout.",
+             slug_suggestion="amazon-sbi-10"),
+        _row(store="Flipkart", category="shopping", code_type="no_code", code="",
+             headline="Flat ₹500 off with Pay Later",
+             description="Flat ₹500 off on eligible BBD transactions.",
+             slug_suggestion="flipkart-500"),
+    ]
+    raws = build_raw(rows, _NOW)
+    assert {r.merchant_name for r in raws} == {"Amazon.in", "Flipkart"}
+    assert all(r.code is None and r.external_ref for r in raws)  # code-less deals
+    urls = {r.merchant_name: r.source_url for r in raws}
+    assert urls["Amazon.in"] == "https://www.amazon.in"
+    assert urls["Flipkart"] == "https://www.flipkart.com"
 
 
 def test_freebie_deal_is_not_mislabeled_as_rupee_discount(db_session):
