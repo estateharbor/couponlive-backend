@@ -14,6 +14,7 @@ from scrapers.desidime import DesidimeScraper
 from scrapers.inrdeals import InrdealsIngestor
 from scrapers.involve_asia_feed import InvolveAsiaFeedScraper
 from scrapers.linkmydeals_feed import LinkMyDealsFeedScraper
+from scrapers.vcommission_feed import VCommissionFeedScraper
 
 # name -> zero-arg factory (override with configured args where needed).
 # LinkMyDeals here is the zero-arg (full-pull) form; the incremental sync with
@@ -25,6 +26,7 @@ SCRAPER_REGISTRY: dict[str, Callable[[], BaseScraper]] = {
     CuelinksFeedScraper.source_name: lambda: CuelinksFeedScraper(),
     FeedicoFeedScraper.source_name: lambda: FeedicoFeedScraper(),
     InvolveAsiaFeedScraper.source_name: lambda: InvolveAsiaFeedScraper(),
+    VCommissionFeedScraper.source_name: lambda: VCommissionFeedScraper(),
 }
 
 

@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     admitad_client_id: str = Field("", alias="ADMITAD_CLIENT_ID")
     admitad_client_secret: str = Field("", alias="ADMITAD_CLIENT_SECRET")
     vcommission_api_key: str = Field("", alias="VCOMMISSION_API_KEY")
+    # vCommission runs on Trackier. apiKey auth (header X-Api-Key + ?apiKey=).
+    # Coupons/deals carry only campaign_id; the affiliate tracking_link comes from
+    # the campaigns endpoint, which we join on. Base is env-overridable.
+    vcommission_api_url: str = Field(
+        "https://api.vcommission.com/v2", alias="VCOMMISSION_API_URL"
+    )
+    vcommission_sync_frequency_minutes: int = Field(
+        120, alias="VCOMMISSION_SYNC_FREQUENCY_MINUTES"
+    )
     # Involve Asia (India + SE Asia: Myntra, Nykaa, Klook…). Auth is a two-step
     # flow: POST key+secret to /authenticate -> bearer token, then call the
     # Offers/Deeplink APIs. Endpoint env-overridable to correct against the live

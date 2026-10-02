@@ -159,6 +159,34 @@ def sync_involve_asia() -> dict:
         session.close()
 
 
+@celery_app.task(name="sync_vcommission")
+def sync_vcommission() -> dict:
+    """Full pull of the vCommission (Trackier) coupons + deals -> pipeline.
+
+    Builds the campaign_id -> tracking_link map, then ingests coupon codes and
+    code-less deals joined to their affiliate deeplink. New codes for
+    validator-backed merchants get picked up by `enqueue_revalidations`.
+    """
+    from scrapers.vcommission_feed import MissingCredentials, VCommissionFeedScraper
+
+    session = get_sessionmaker()()
+    try:
+        scraper = VCommissionFeedScraper()
+        try:
+            offers = scraper.scrape()
+        except MissingCredentials as exc:
+            log.warning("vcommission.skipped", reason=str(exc))
+            return {"source": "vCommission", "skipped": "no api key"}
+
+        summary = ingest_raw(session, "vCommission", offers)
+        return {"source": "vCommission", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "raw": summary.raw_count,
+                "errors": len(summary.errors),
+                "sample_error": summary.errors[0] if summary.errors else None}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sync_feedico")
 def sync_feedico() -> dict:
     """Full pull of the Feedico coupon catalog -> pipeline (codes; discovery-only,
@@ -433,6 +461,11 @@ celery_app.conf.beat_schedule = {
     "sync-involve-asia": {
         "task": "sync_involve_asia",
         "schedule": timedelta(minutes=get_settings().involve_asia_sync_frequency_minutes),
+    },
+    # vCommission (Trackier) coupons + deals sync (India merchants).
+    "sync-vcommission": {
+        "task": "sync_vcommission",
+        "schedule": timedelta(minutes=get_settings().vcommission_sync_frequency_minutes),
     },
     # Feedico coupon-catalog sync (slow cadence — free tier is 1000 req/month).
     "sync-feedico": {
