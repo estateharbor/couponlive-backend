@@ -54,6 +54,17 @@ def _priority_for(coupon: Coupon, revalidate_after: timedelta) -> int | None:
     if last_checked is None:
         return 0  # newly ingested, never checked
     age = utcnow() - _aware(last_checked)
+
+    # Circuit-breaker: a code that keeps coming back "unverifiable" (the merchant
+    # blocks our validator) backs off to a long cooldown instead of burning a
+    # browser run every sweep. We still retry occasionally in case the site/code
+    # changes. Applies regardless of priority — a persistently blocked code is
+    # not worth hammering, valid or not.
+    settings = get_settings()
+    if (coupon.unverifiable_streak or 0) >= settings.validate_unverifiable_streak_threshold:
+        backoff = timedelta(hours=settings.validate_unverifiable_backoff_hours)
+        return 2 if age >= backoff else None
+
     if coupon.status is CouponStatus.valid and coupon.merchant.priority > 0:
         return 1 if age >= revalidate_after else None
     return 2 if age >= revalidate_after else None
@@ -120,16 +131,19 @@ def record_validation_result(
         # code changed. Don't confirm, don't refresh the "Verified" clock, and
         # don't slam a previously-valid code's confidence down to the 0.40 floor.
         # If we keep failing to re-confirm, the serve-freshness window (which
-        # keys off last_validated_at) ages it out on its own.
+        # keys off last_validated_at) ages it out on its own. Count the streak so
+        # the scheduler can back off codes that always come back inconclusive.
+        coupon.unverifiable_streak = (coupon.unverifiable_streak or 0) + 1
         return
 
-    # Decisive result: it's a real confirmation, so update status + confidence
-    # and stamp last_validated_at.
+    # Decisive result: it's a real confirmation, so update status + confidence,
+    # stamp last_validated_at, and clear the inconclusive streak.
     if result.result is ValidationResultEnum.valid:
         coupon.status = CouponStatus.valid
     elif result.result is ValidationResultEnum.invalid:
         coupon.status = CouponStatus.invalid
 
+    coupon.unverifiable_streak = 0
     coupon.last_validated_at = result.checked_at
     positive, total = _feedback_counts(session, coupon.id)
     coupon.confidence_score = compute_confidence(result.result, positive, total)

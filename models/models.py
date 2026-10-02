@@ -141,6 +141,10 @@ class Coupon(Base, TimestampMixin):
     # unverifiable). Drives scheduler pacing so a blocked/inconclusive code
     # doesn't get retried every batch, without faking a fresh verification.
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Consecutive "unverifiable" results. Reset to 0 by any decisive (valid/
+    # invalid) result. Drives the re-validation circuit-breaker: a code that
+    # keeps coming back inconclusive (site blocks us) backs off to a long cooldown.
+    unverifiable_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     merchant: Mapped["Merchant"] = relationship(back_populates="coupons")
     sources: Mapped[list["CouponSource"]] = relationship(

@@ -122,6 +122,45 @@ def test_unverifiable_does_not_taint_a_valid_code(db_session):
     assert db_session.scalar(select(func.count()).select_from(ValidationLog)) == 2
 
 
+def test_unverifiable_streak_counts_and_resets(db_session):
+    coupon = _mk_coupon(db_session, code="BLOCKED1")
+    db_session.commit()
+
+    for _ in range(3):
+        record_validation_result(
+            db_session, coupon,
+            ValidationResult(result=ValidationResultEnum.unverifiable, checked_at=_now()),
+        )
+    db_session.commit()
+    assert coupon.unverifiable_streak == 3  # each inconclusive attempt counts
+
+    # A decisive result clears the streak.
+    record_validation_result(
+        db_session, coupon,
+        ValidationResult(result=ValidationResultEnum.valid, checked_at=_now()),
+    )
+    db_session.commit()
+    assert coupon.unverifiable_streak == 0
+
+
+def test_circuit_breaker_backs_off_persistently_blocked_codes(db_session):
+    from datetime import timedelta
+
+    # A code past the unverifiable threshold, checked just now, is NOT re-picked.
+    c = _mk_coupon(db_session, code="BLOCKED2", status=CouponStatus.unverified)
+    c.unverifiable_streak = 5
+    c.last_checked_at = _now()
+    db_session.commit()
+    picked = [cp.code for _p, cp in select_coupons_to_validate(db_session, limit=50)]
+    assert "BLOCKED2" not in picked  # backed off (within cooldown)
+
+    # Once the long back-off window has passed, it becomes eligible again.
+    c.last_checked_at = _now() - timedelta(hours=200)  # > 168h default backoff
+    db_session.commit()
+    picked = [cp.code for _p, cp in select_coupons_to_validate(db_session, limit=50)]
+    assert "BLOCKED2" in picked  # retried after cooldown
+
+
 def test_run_batch_with_injected_validator(db_session):
     _mk_coupon(db_session, code="GOOD", merchant="myntra")
     _mk_coupon(db_session, code="BAD", merchant="nykaa")

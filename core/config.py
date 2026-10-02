@@ -49,6 +49,16 @@ class Settings(BaseSettings):
         4, alias="VALIDATE_TOP_MERCHANT_REVALIDATE_HOURS"
     )
     validation_enabled: bool = Field(False, alias="VALIDATION_ENABLED")
+    # Circuit-breaker: after this many consecutive "unverifiable" results (site
+    # blocks the validator / login-gated checkout), stop re-validating a code on
+    # every sweep and only retry after the long back-off window below. Saves
+    # worker time and avoids hammering merchants that always block us.
+    validate_unverifiable_streak_threshold: int = Field(
+        3, alias="VALIDATE_UNVERIFIABLE_STREAK_THRESHOLD"
+    )
+    validate_unverifiable_backoff_hours: int = Field(
+        168, alias="VALIDATE_UNVERIFIABLE_BACKOFF_HOURS"  # ~weekly re-check
+    )
 
     # Freshness / staleness policy
     serve_freshness_hours: int = Field(4, alias="SERVE_FRESHNESS_HOURS")
