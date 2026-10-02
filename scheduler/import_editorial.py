@@ -28,6 +28,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from core.config import get_settings
 from core.logging import get_logger
 from models.base import get_sessionmaker
 from models.enums import DiscountType, IngestionMethod
@@ -150,6 +151,29 @@ def build_raw(rows: list[dict], now: datetime) -> list[RawCoupon]:
     return raws
 
 
+def _enqueue_validation(session) -> int:
+    """Queue the just-imported, never-checked codes for checkout validation.
+
+    Only coupons whose merchant has a registered validator (AJIO/Myntra/Nykaa +
+    Shopify stores today) are selectable — the rest honestly stay "Not verified
+    yet". No-op when VALIDATION_ENABLED is off or the broker isn't reachable."""
+    if not get_settings().validation_enabled:
+        return 0
+    try:
+        from scheduler.tasks import validate_coupon
+        from scheduler.validation import select_coupons_to_validate
+
+        queued = 0
+        for _prio, coupon in select_coupons_to_validate(session, limit=500):
+            if coupon.last_checked_at is None:  # newly imported, never checked
+                validate_coupon.apply_async(args=[coupon.id], priority=0)
+                queued += 1
+        return queued
+    except Exception as exc:  # broker down / not in a worker — import still succeeded
+        log.warning("editorial.enqueue_failed", error=str(exc))
+        return 0
+
+
 def main(path: str | Path = DEFAULT_CSV) -> None:
     path = Path(path)
     if not path.exists():
@@ -166,6 +190,7 @@ def main(path: str | Path = DEFAULT_CSV) -> None:
     session = get_sessionmaker()()
     try:
         summary = ingest_raw(session, SOURCE_NAME, raws)
+        queued = _enqueue_validation(session)
     finally:
         session.close()
 
@@ -173,6 +198,11 @@ def main(path: str | Path = DEFAULT_CSV) -> None:
         f"editorial import done — csv rows: {len(rows)}, importable: {len(raws)}, "
         f"created: {summary.coupons_created}, updated: {summary.coupons_updated}, "
         f"merchants created: {summary.merchants_created}, errors: {len(summary.errors)}"
+    )
+    print(
+        f"queued for checkout validation: {queued}"
+        + ("" if get_settings().validation_enabled
+           else " (VALIDATION_ENABLED is off — set it to validate)")
     )
     for err in summary.errors[:10]:
         print("  !", err)

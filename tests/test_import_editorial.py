@@ -8,7 +8,7 @@ from sqlalchemy import select
 from models.enums import CouponStatus, DiscountType
 from models.models import Coupon, Merchant
 from scrapers.pipeline import ingest_raw
-from scheduler.import_editorial import _keep, _parse_discount, build_raw
+from scheduler.import_editorial import _enqueue_validation, _keep, _parse_discount, build_raw
 
 _NOW = datetime(2026, 10, 2, tzinfo=timezone.utc)
 
@@ -64,6 +64,13 @@ def test_freebie_deal_is_not_mislabeled_as_rupee_discount(db_session):
     assert deal is not None
     assert deal.discount_type is DiscountType.unknown
     assert deal.discount_value is None
+
+
+def test_enqueue_validation_noop_when_disabled(db_session):
+    # VALIDATION_ENABLED is off by default in tests — enqueue must be a safe no-op
+    # (and never raise even without a broker), so the import itself still succeeds.
+    ingest_raw(db_session, "Editorial curation", build_raw([_row()], _NOW))
+    assert _enqueue_validation(db_session) == 0
 
 
 def test_editorial_rows_land_unverified(db_session):
