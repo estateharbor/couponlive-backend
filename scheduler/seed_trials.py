@@ -236,6 +236,33 @@ SEED: list[dict] = [
          website="https://otter.ai", offer_type=T.card_trial,
          title="Otter.ai Business — 7-day free trial", trial_days=7, card_required=True,
          signup_url="https://otter.ai/"),
+
+    # --- Developer & cloud (editorial cross-check, 2 Oct 2026) ------------
+    dict(name="Firecrawl", slug="firecrawl", vendor="Firecrawl", category="developer-cloud",
+         ai=True, website="https://www.firecrawl.dev", pricing="https://www.firecrawl.dev/pricing",
+         offer_type=T.lifetime_free_tier,
+         title="Firecrawl Free — 1,000 credits/month, no card", card_required=False,
+         credit_amount=1000, signup_url="https://www.firecrawl.dev/pricing"),
+    dict(name="Firecrawl", slug="firecrawl", vendor="Firecrawl", category="developer-cloud",
+         ai=True, website="https://www.firecrawl.dev", pricing="https://www.firecrawl.dev/pricing",
+         offer_type=T.student_offer,
+         title="Firecrawl — 10,000 free credits for students (code STUDENTEDU)",
+         card_required=False, credit_amount=10000,
+         eligibility="Enrolled students with an academic email; non-commercial use",
+         signup_url="https://www.firecrawl.dev/student-program"),
+    dict(name="Railway", slug="railway", vendor="Railway", category="developer-cloud", ai=False,
+         website="https://railway.com", pricing="https://railway.com/pricing",
+         offer_type=T.no_card_trial,
+         title="Railway — $5 free trial credit (up to 30 days)", trial_days=30,
+         card_required=False, credit_amount=5, credit_currency="USD",
+         eligibility="New users; then $1/month free plan",
+         signup_url="https://docs.railway.com/pricing/free-trial"),
+    dict(name="Neon", slug="neon", vendor="Neon (Databricks)", category="developer-cloud", ai=False,
+         website="https://neon.com", offer_type=T.startup_credit,
+         title="Neon Startups — up to $1,000 credits (up to $200K with Databricks)",
+         card_required=False, credit_amount=1000, credit_currency="USD",
+         eligibility="Self-funded (<$1M) up to $1,000; venture-backed/accelerator up to $200K Neon+Databricks; 12 months",
+         signup_url="https://neon.com/startups"),
 ]
 
 # Offers that earlier seeds created but are now STALE/incorrect (promo ended or

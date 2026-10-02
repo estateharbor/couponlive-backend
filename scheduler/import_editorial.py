@@ -60,6 +60,7 @@ MERCHANT_HOME: dict[str, str] = {
     "kfc": "https://online.kfc.co.in",
     "amazon": "https://www.amazon.in",
     "flipkart": "https://www.flipkart.com",
+    "tatacliqluxury": "https://luxury.tatacliq.com",
 }
 
 # Wallet/bank intermediaries (and "via <platform>" combos) that must not be
