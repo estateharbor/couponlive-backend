@@ -60,11 +60,21 @@ _CM_MODEL = re.compile(
     re.IGNORECASE,
 )
 _CM_TLD = re.compile(r"\.(com|co\.in|in|net|org|shop|store|io|app)\b", re.IGNORECASE)
+# A bracketed campaign tag marking a program we must NOT ingest (dead inventory).
+_INACTIVE_TAG = re.compile(
+    r"\[\s*(disabled|paused|inactive|expired|test|suspended|closed|do ?not ?use)\s*\]",
+    re.IGNORECASE,
+)
+
+
+def _is_inactive_campaign(name: Any) -> bool:
+    return bool(_INACTIVE_TAG.search(str(name or "")))
 
 
 def _clean_merchant(name: Any) -> str:
     raw = str(name or "").strip()
-    n = _CM_COUNTRY.sub("", raw)
+    n = re.sub(r"\[[^\]]*\]", " ", raw)     # drop any [bracketed] campaign tags
+    n = _CM_COUNTRY.sub("", n)
     n = _CM_TLD.sub("", n)
     n = _CM_MODEL.sub(" ", n)
     n = re.sub(r"\s*[-–|]\s*", " ", n)      # leftover separators
@@ -178,6 +188,8 @@ class VCommissionFeedScraper(BaseScraper):
     def _map_coupon(self, it: dict, links: dict[str, str], now: datetime) -> RawCoupon | None:
         if str(it.get("status") or "active").lower() != "active":
             return None  # skip pending/expired
+        if _is_inactive_campaign(it.get("campaign_name")):
+            return None  # skip offers under a disabled/paused campaign
         merchant = _clean_merchant(it.get("campaign_name"))
         code = it.get("code")
         ext = it.get("id")
@@ -202,6 +214,8 @@ class VCommissionFeedScraper(BaseScraper):
     def _map_deal(self, it: dict, links: dict[str, str], now: datetime) -> RawCoupon | None:
         if str(it.get("status") or "active").lower() != "active":
             return None
+        if _is_inactive_campaign(it.get("campaign_name")):
+            return None  # skip offers under a disabled/paused campaign
         merchant = _clean_merchant(it.get("campaign_name"))
         ext = it.get("id")
         if not merchant or ext in (None, ""):

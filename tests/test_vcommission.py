@@ -94,6 +94,18 @@ def test_clean_merchant_strips_trackier_cruft():
     assert _clean_merchant("Blabliblulife.com Ecommerce CPS - India") == "Blabliblulife"
     assert _clean_merchant("MakeMyTrip CPS - India") == "MakeMyTrip"
     assert _clean_merchant("Nykaa") == "Nykaa"  # already clean, unchanged
+    assert _clean_merchant("Amantelingerie India [Disabled]") == "Amantelingerie India"
+
+
+def test_disabled_campaigns_are_skipped():
+    links = {}
+    s = _scraper()
+    row = {"id": "x", "code": "X", "status": "active", "campaign_name": "Foo [Disabled]",
+           "campaign_id": 1, "description": "d"}
+    assert s._map_coupon(row, links, __import__("datetime").datetime.now()) is None
+    deal = {"id": "y", "status": "active", "campaign_name": "Bar [Paused]", "campaign_id": 2,
+            "description": "d", "name": "n"}
+    assert s._map_deal(deal, links, __import__("datetime").datetime.now()) is None
 
 
 def test_campaign_links_built_and_cleaned():
