@@ -46,6 +46,32 @@ def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", _TAG.sub(" ", html.unescape(str(value)))).strip()
 
 
+# Trackier campaign names arrive as "Ajio.com Ecommerce CPS - India" — strip the
+# payout-model / vertical / country cruft so the merchant is just "Ajio" (clean
+# display AND dedupe with existing merchants).
+_CM_COUNTRY = re.compile(
+    r"\s*[-–|]\s*(india|in|uae|usa?|uk|global|ww|worldwide|bangladesh|nepal|"
+    r"sri ?lanka|indonesia|singapore|malaysia|row|intl|international)\s*$",
+    re.IGNORECASE,
+)
+_CM_MODEL = re.compile(
+    r"\b(e-?commerce|cps|cpl|cpa|cpi|cpv|cpd|cpc|cpe|incent|non-?incent|"
+    r"affiliate|coupons?|offers?|mobile app|app install)\b",
+    re.IGNORECASE,
+)
+_CM_TLD = re.compile(r"\.(com|co\.in|in|net|org|shop|store|io|app)\b", re.IGNORECASE)
+
+
+def _clean_merchant(name: Any) -> str:
+    raw = str(name or "").strip()
+    n = _CM_COUNTRY.sub("", raw)
+    n = _CM_TLD.sub("", n)
+    n = _CM_MODEL.sub(" ", n)
+    n = re.sub(r"\s*[-–|]\s*", " ", n)      # leftover separators
+    n = re.sub(r"\s+", " ", n).strip(" -–|")
+    return n or raw
+
+
 def _clean_tracking(url: Any) -> str | None:
     """Drop Trackier's `{placeholder}` query params (p1={your-transaction-id}, …)
     so the stored click-out is a clean, working affiliate deeplink."""
@@ -105,8 +131,9 @@ class VCommissionFeedScraper(BaseScraper):
             resp = self.session.get(
                 self.campaigns_url,
                 headers=self._headers(),
-                params={"apiKey": self.api_key, "limit": 1000, "page": page,
-                        "showApproved": 1},
+                # NB: showApproved=1 returns 0 campaigns for this account — omit it
+                # so we get the full set (with tracking_link) to join on.
+                params={"apiKey": self.api_key, "limit": 1000, "page": page},
                 timeout=60,
             )
             resp.raise_for_status()
@@ -129,6 +156,7 @@ class VCommissionFeedScraper(BaseScraper):
     def _fetch_paged(self, url: str, key: str) -> list[dict]:
         items: list[dict] = []
         token: str | None = None
+        seen: set[str] = set()
         for _ in range(self.max_pages):
             params = {"apiKey": self.api_key}
             if token:
@@ -138,16 +166,19 @@ class VCommissionFeedScraper(BaseScraper):
             payload = resp.json() or {}
             rows = payload.get(key) or []
             items.extend(r for r in rows if isinstance(r, dict))
-            token = payload.get("pageToken") or None
-            if not token or not rows:
+            # The feed exposes both pageToken and nextPageToken; prefer the latter.
+            nxt = payload.get("nextPageToken") or payload.get("pageToken") or None
+            if not rows or not nxt or nxt in seen:
                 break
+            seen.add(nxt)
+            token = nxt
         return items
 
     # -- mapping -------------------------------------------------------------
     def _map_coupon(self, it: dict, links: dict[str, str], now: datetime) -> RawCoupon | None:
         if str(it.get("status") or "active").lower() != "active":
             return None  # skip pending/expired
-        merchant = it.get("campaign_name")
+        merchant = _clean_merchant(it.get("campaign_name"))
         code = it.get("code")
         ext = it.get("id")
         if not merchant or not code or ext in (None, ""):
@@ -171,7 +202,7 @@ class VCommissionFeedScraper(BaseScraper):
     def _map_deal(self, it: dict, links: dict[str, str], now: datetime) -> RawCoupon | None:
         if str(it.get("status") or "active").lower() != "active":
             return None
-        merchant = it.get("campaign_name")
+        merchant = _clean_merchant(it.get("campaign_name"))
         ext = it.get("id")
         if not merchant or ext in (None, ""):
             return None
@@ -231,7 +262,7 @@ def diagnose() -> None:
         print(f"\n=== {label}: GET {url} ===")
         params = {"apiKey": s.api_key}
         if label == "CAMPAIGNS":
-            params.update({"limit": 3, "page": 1, "showApproved": 1})
+            params.update({"limit": 3, "page": 1})
         resp = s.session.get(url, headers=s._headers(), params=params, timeout=60)
         print("HTTP", resp.status_code)
         try:

@@ -9,7 +9,12 @@ from __future__ import annotations
 import pytest
 
 from models.enums import DiscountType, IngestionMethod
-from scrapers.vcommission_feed import VCommissionFeedScraper, MissingCredentials, _clean_tracking
+from scrapers.vcommission_feed import (
+    VCommissionFeedScraper,
+    MissingCredentials,
+    _clean_merchant,
+    _clean_tracking,
+)
 
 
 class _FakeResp:
@@ -79,6 +84,16 @@ def _scraper():
 def test_clean_tracking_strips_placeholders():
     assert _clean_tracking("https://trk.vc.com/abc?p1={x}&source={y}") == "https://trk.vc.com/abc"
     assert _clean_tracking("https://trk.vc.com/xyz") == "https://trk.vc.com/xyz"
+    # A real vCommission click link keeps its campaign_id/pub_id params.
+    real = "https://track.vcommission.com/click?campaign_id=10203&pub_id=132083"
+    assert _clean_tracking(real) == real
+
+
+def test_clean_merchant_strips_trackier_cruft():
+    assert _clean_merchant("Ajio.com Ecommerce CPS - India") == "Ajio"
+    assert _clean_merchant("Blabliblulife.com Ecommerce CPS - India") == "Blabliblulife"
+    assert _clean_merchant("MakeMyTrip CPS - India") == "MakeMyTrip"
+    assert _clean_merchant("Nykaa") == "Nykaa"  # already clean, unchanged
 
 
 def test_campaign_links_built_and_cleaned():
