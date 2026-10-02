@@ -123,6 +123,42 @@ def sync_cuelinks() -> dict:
         session.close()
 
 
+@celery_app.task(name="sync_involve_asia")
+def sync_involve_asia() -> dict:
+    """Full pull of the Involve Asia Offers feed -> pipeline (codes + deals).
+
+    Two-step auth (key+secret -> token) happens inside the scraper. Like Cuelinks
+    it returns the current live set each call, so we ingest the whole batch and
+    the pipeline dedupes. New codes for validator-backed merchants get picked up
+    by the periodic `enqueue_revalidations` sweep.
+    """
+    from scrapers.involve_asia_feed import (
+        AuthError,
+        InvolveAsiaFeedScraper,
+        MissingCredentials,
+    )
+
+    session = get_sessionmaker()()
+    try:
+        scraper = InvolveAsiaFeedScraper()
+        try:
+            offers = scraper.scrape()
+        except MissingCredentials as exc:
+            log.warning("involve_asia.skipped", reason=str(exc))
+            return {"source": "Involve Asia", "skipped": "no credentials"}
+        except AuthError as exc:
+            log.warning("involve_asia.auth_failed", reason=str(exc))
+            return {"source": "Involve Asia", "error": "auth failed"}
+
+        summary = ingest_raw(session, "Involve Asia", offers)
+        return {"source": "Involve Asia", "created": summary.coupons_created,
+                "updated": summary.coupons_updated, "raw": summary.raw_count,
+                "errors": len(summary.errors),
+                "sample_error": summary.errors[0] if summary.errors else None}
+    finally:
+        session.close()
+
+
 @celery_app.task(name="sync_feedico")
 def sync_feedico() -> dict:
     """Full pull of the Feedico coupon catalog -> pipeline (codes; discovery-only,
@@ -392,6 +428,11 @@ celery_app.conf.beat_schedule = {
     "sync-cuelinks": {
         "task": "sync_cuelinks",
         "schedule": timedelta(minutes=get_settings().cuelinks_sync_frequency_minutes),
+    },
+    # Involve Asia Offers feed sync (India + SE Asia merchants).
+    "sync-involve-asia": {
+        "task": "sync_involve_asia",
+        "schedule": timedelta(minutes=get_settings().involve_asia_sync_frequency_minutes),
     },
     # Feedico coupon-catalog sync (slow cadence — free tier is 1000 req/month).
     "sync-feedico": {

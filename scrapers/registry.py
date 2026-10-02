@@ -12,6 +12,7 @@ from scrapers.cuelinks_feed import CuelinksFeedScraper
 from scrapers.feedico_feed import FeedicoFeedScraper
 from scrapers.desidime import DesidimeScraper
 from scrapers.inrdeals import InrdealsIngestor
+from scrapers.involve_asia_feed import InvolveAsiaFeedScraper
 from scrapers.linkmydeals_feed import LinkMyDealsFeedScraper
 
 # name -> zero-arg factory (override with configured args where needed).
@@ -23,6 +24,7 @@ SCRAPER_REGISTRY: dict[str, Callable[[], BaseScraper]] = {
     LinkMyDealsFeedScraper.source_name: lambda: LinkMyDealsFeedScraper(),
     CuelinksFeedScraper.source_name: lambda: CuelinksFeedScraper(),
     FeedicoFeedScraper.source_name: lambda: FeedicoFeedScraper(),
+    InvolveAsiaFeedScraper.source_name: lambda: InvolveAsiaFeedScraper(),
 }
 
 
