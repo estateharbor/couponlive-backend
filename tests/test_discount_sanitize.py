@@ -29,6 +29,10 @@ from scrapers.normalize import sanitize_discount
     (D.fixed, 200, "Flat ₹200 Off", D.fixed, 200),
     # ₹ with comma.
     (D.unknown, None, "Save ₹1,000 on electronics", D.fixed, 1000),
+    # "rs" INSIDE a word (users/hours) must NOT be read as a rupee amount, and a
+    # trailing comma must never crash as float("") — keep the percentage.
+    (D.percentage, 20, "20% off for new users, with an extra 10%", D.percentage, 20),
+    (D.unknown, None, "Open for 24 hours, no code needed", D.unknown, None),
 ])
 def test_sanitize(dtype, dval, text, exp_type, exp_val):
     t, v = sanitize_discount(dtype, dval, text)

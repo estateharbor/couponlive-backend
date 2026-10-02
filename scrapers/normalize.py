@@ -104,7 +104,10 @@ class NormalizedCoupon:
 
 
 _PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
-_RUP_RE = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
+# Currency token must be ₹ or a word-boundary "rs"/"rs."/"inr" (so it doesn't
+# match "rs" inside words like "useRS"), and the amount must START with a digit
+# (so a stray "₹," / "rs ," isn't captured as an empty number).
+_RUP_RE = re.compile(r"(?:₹|\brs\.?|\binr\b)\s*(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
 
 
 def sanitize_discount(
@@ -119,7 +122,8 @@ def sanitize_discount(
     pct_m = _PCT_RE.search(t)
     rup_m = _RUP_RE.search(t)
     pv = float(pct_m.group(1)) if pct_m else None
-    rv = float(rup_m.group(1).replace(",", "")) if rup_m else None
+    _rup_raw = rup_m.group(1).replace(",", "") if rup_m else ""
+    rv = float(_rup_raw) if _rup_raw else None  # guard: never float("")
 
     if "cashback" in t:
         return DiscountType.cashback, (pv if pv and 0 < pv <= 95 else None)

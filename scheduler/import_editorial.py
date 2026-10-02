@@ -65,7 +65,9 @@ MERCHANT_HOME: dict[str, str] = {
 _SKIP_STORE_MARKERS = ("×", "(via", " via ", "phonepe", "cred", "paytm", "amazon pay")
 
 _PCT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
-_RUP = re.compile(r"(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)", re.IGNORECASE)
+# Mirror scrapers.normalize._RUP_RE: word-boundary currency token + digit-led
+# amount (so "rs" inside "users" and a stray "₹," are never matched).
+_RUP = re.compile(r"(?:₹|\brs\.?|\binr\b)\s*(\d[\d,]*(?:\.\d+)?)", re.IGNORECASE)
 _OFF_CTX = ("off", "discount", "save", "flat", "cashback")
 
 
