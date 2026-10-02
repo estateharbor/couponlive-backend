@@ -37,28 +37,28 @@ SEED: list[dict] = [
          india_available=True, signup_url="https://claude.ai/"),
     dict(name="Perplexity", slug="perplexity", vendor="Perplexity AI", category="ai", ai=True,
          website="https://perplexity.ai", offer_type=T.freemium_premium_trial,
-         title="Perplexity free plan (Pro often free via Airtel)", card_required=False,
+         title="Perplexity — free plan (limited Pro searches/day)", card_required=False,
          india_available=True, signup_url="https://www.perplexity.ai/"),
     dict(name="Notion AI", slug="notion-ai", vendor="Notion", category="ai", ai=True,
          website="https://www.notion.so/product/ai", offer_type=T.freemium_premium_trial,
          title="Notion AI — limited free trial responses", card_required=False,
          signup_url="https://www.notion.so/product/ai"),
     dict(name="ElevenLabs", slug="elevenlabs", vendor="ElevenLabs", category="ai", ai=True,
-         website="https://elevenlabs.io", offer_type=T.no_card_trial,
-         title="ElevenLabs free tier — no card", card_required=False,
-         signup_url="https://elevenlabs.io/"),
+         website="https://elevenlabs.io", offer_type=T.lifetime_free_tier,
+         title="ElevenLabs — 10,000 free characters/month", card_required=False,
+         india_available=True, signup_url="https://elevenlabs.io/"),
     dict(name="Gamma", slug="gamma", vendor="Gamma", category="ai", ai=True,
          website="https://gamma.app", offer_type=T.no_card_trial,
          title="Gamma free plan with AI credits — no card", card_required=False,
          signup_url="https://gamma.app/"),
     dict(name="Cursor", slug="cursor", vendor="Anysphere", category="ai", ai=True,
-         website="https://cursor.com", offer_type=T.freemium_premium_trial,
-         title="Cursor Pro trial", trial_days=14, card_required=None,
+         website="https://cursor.com", offer_type=T.lifetime_free_tier,
+         title="Cursor — free Hobby plan (limited Tab)", card_required=False,
          signup_url="https://www.cursor.com/"),
     dict(name="GitHub Copilot", slug="github-copilot", vendor="GitHub", category="ai", ai=True,
-         website="https://github.com/features/copilot", offer_type=T.card_trial,
-         title="GitHub Copilot — 30-day free trial", trial_days=30, card_required=True,
-         renew_usd=10, renew_period="month", signup_url="https://github.com/features/copilot"),
+         website="https://github.com/features/copilot", offer_type=T.lifetime_free_tier,
+         title="GitHub Copilot Free — 2,000 completions + 50 chat/mo", card_required=False,
+         india_available=True, signup_url="https://github.com/features/copilot/plans"),
 
     # --- Design & creative ---
     dict(name="Canva Pro", slug="canva-pro", vendor="Canva", category="design", ai=False,
@@ -189,13 +189,86 @@ SEED: list[dict] = [
          ai=False, website="https://www.primevideo.com", offer_type=T.card_trial,
          title="Amazon Prime — 30-day free trial", trial_days=30, card_required=True,
          india_available=True, signup_url="https://www.amazon.in/prime"),
+
+    # --- AI (editorial cross-check, Oct 2026) -----------------------------
+    # Google AI Pro — one tool, several offers (consumer trial / Jio / student).
+    dict(name="Google AI Pro", slug="google-ai-pro", vendor="Google", category="ai", ai=True,
+         website="https://gemini.google.com", offer_type=T.card_trial,
+         title="Google AI Pro — 1-month free trial", trial_days=30, card_required=True,
+         india_available=True, renew_usd=19.99, renew_period="month",
+         signup_url="https://gemini.google.com/"),
+    dict(name="Google AI Pro", slug="google-ai-pro", vendor="Google", category="ai", ai=True,
+         website="https://gemini.google.com", offer_type=T.telecom_bundle,
+         title="Google AI Pro — up to 18 months via eligible Jio plans", card_required=None,
+         india_available=True, eligibility="Eligible Jio plans",
+         signup_url="https://gemini.google.com/"),
+    dict(name="Google AI Pro", slug="google-ai-pro", vendor="Google", category="ai", ai=True,
+         website="https://gemini.google.com", offer_type=T.student_offer,
+         title="Google AI Plus — 12 months free for students", card_required=True,
+         india_available=True, eligibility="Verified college students (India)",
+         signup_url="https://one.google.com/ai-student"),
+    dict(name="Google Gemini", slug="google-gemini", vendor="Google", category="ai", ai=True,
+         website="https://gemini.google.com", offer_type=T.lifetime_free_tier,
+         title="Gemini — free tier, no card", card_required=False, india_available=True,
+         signup_url="https://gemini.google.com/"),
+    dict(name="Microsoft 365 Premium", slug="microsoft-365-premium", vendor="Microsoft",
+         category="productivity", ai=True, website="https://www.microsoft.com/microsoft-365",
+         offer_type=T.card_trial, title="Microsoft 365 Premium — 1-month free trial (incl. Copilot)",
+         trial_days=30, card_required=True, india_available=True, renew_usd=19.99,
+         renew_period="month", signup_url="https://www.microsoft.com/microsoft-365"),
+    dict(name="DeepSeek", slug="deepseek", vendor="DeepSeek", category="ai", ai=True,
+         website="https://chat.deepseek.com", offer_type=T.lifetime_free_tier,
+         title="DeepSeek Chat — free to use, no card", card_required=False,
+         india_available=True, signup_url="https://chat.deepseek.com/"),
+    dict(name="Runway", slug="runway", vendor="Runway", category="ai", ai=True,
+         website="https://runwayml.com", offer_type=T.ai_credits,
+         title="Runway — 125 one-time free credits", card_required=False,
+         india_available=True, credit_amount=125, signup_url="https://runwayml.com/"),
+    dict(name="Adobe Firefly", slug="adobe-firefly", vendor="Adobe", category="ai", ai=True,
+         website="https://www.adobe.com/products/firefly.html", offer_type=T.lifetime_free_tier,
+         title="Adobe Firefly — free tier with monthly generative credits", card_required=False,
+         india_available=True, signup_url="https://www.adobe.com/products/firefly.html"),
+    dict(name="Anthropic API", slug="anthropic-api", vendor="Anthropic", category="developer-cloud",
+         ai=True, website="https://platform.claude.com", offer_type=T.ai_credits,
+         title="Anthropic API — $5 free starter credit", card_required=False,
+         credit_amount=5, credit_currency="USD", signup_url="https://platform.claude.com/"),
+    dict(name="Otter.ai", slug="otter-ai", vendor="Otter.ai", category="productivity", ai=True,
+         website="https://otter.ai", offer_type=T.card_trial,
+         title="Otter.ai Business — 7-day free trial", trial_days=7, card_required=True,
+         signup_url="https://otter.ai/"),
+]
+
+# Offers that earlier seeds created but are now STALE/incorrect (promo ended or
+# product changed). Removed by (slug, exact old title) so corrected versions
+# above don't leave a duplicate behind. A verified offer is never listed here.
+RETIRE: list[tuple[str, str]] = [
+    ("perplexity", "Perplexity free plan (Pro often free via Airtel)"),  # Airtel Pro ended Jan 2026
+    ("cursor", "Cursor Pro trial"),                                       # Pro 14-day trial removed 2026
+    ("github-copilot", "GitHub Copilot — 30-day free trial"),             # replaced by free plan
+    ("elevenlabs", "ElevenLabs free tier — no card"),                    # replaced by char-quota title
 ]
 
 
 def main() -> None:
     session = get_sessionmaker()()
-    created_tools = created_offers = updated = 0
+    created_tools = created_offers = updated = retired = 0
     try:
+        # Remove offers that are now stale/incorrect (keyed by slug + old title),
+        # so corrected versions below don't leave a duplicate behind.
+        for slug, title in RETIRE:
+            tool = session.scalar(select(Tool).where(Tool.slug == slug))
+            if tool is None:
+                continue
+            stale = session.scalar(
+                select(TrialOffer).where(
+                    TrialOffer.tool_id == tool.id, TrialOffer.title == title
+                )
+            )
+            if stale is not None:
+                session.delete(stale)
+                retired += 1
+        session.flush()
+
         for row in SEED:
             tool = session.scalar(select(Tool).where(Tool.slug == row["slug"]))
             if tool is None:
@@ -240,7 +313,7 @@ def main() -> None:
             offer.status = TrialStatus.live
         session.commit()
         print(f"seed done — tools created: {created_tools}, offers created: {created_offers}, "
-              f"offers updated: {updated}")
+              f"offers updated: {updated}, stale offers retired: {retired}")
     finally:
         session.close()
 
