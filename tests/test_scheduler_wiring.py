@@ -106,3 +106,21 @@ def test_purge_old_validations_keeps_other_jobs():
     assert purge_old_validations(r) == 2
     assert [json.loads(m)["headers"]["task"] for m in r.lists[b"celery"]] == ["sync_linkmydeals"]
     assert len(r.lists[b"validation"]) == 1          # new queue untouched
+
+
+def test_feed_syncs_are_clock_pinned_not_countdowns():
+    """A countdown (timedelta) restarts from zero on every worker restart, so
+    frequent deploys meant the 30-min LinkMyDeals sync never came due."""
+    from celery.schedules import crontab
+
+    from scheduler.celery_app import celery_app
+    from scheduler.tasks import _clock
+
+    sched = celery_app.conf.beat_schedule
+    for entry in ("sync-linkmydeals", "sync-cuelinks", "sync-involve-asia",
+                  "sync-vcommission", "sync-admitad", "sync-feedico"):
+        assert isinstance(sched[entry]["schedule"], crontab), entry
+
+    # 30 min, offset 5 -> :05 and :35
+    assert _clock(30, 5).minute == {5, 35}
+    assert _clock(120, 40).hour == set(range(0, 24, 2)) and _clock(120, 40).minute == {40}

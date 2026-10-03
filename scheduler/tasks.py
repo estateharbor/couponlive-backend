@@ -571,6 +571,25 @@ def enqueue_revalidations() -> dict:
 
 
 # --- Beat schedule -------------------------------------------------------
+def _clock(minutes: int, offset: int):
+    """An "every N minutes" cadence pinned to the CLOCK (crontab), not a
+    countdown. Beat keeps no state across worker restarts here, so a timedelta
+    countdown restarted from zero on every deploy — with frequent deploys the
+    30-min LinkMyDeals sync never came due (silent 12h+, while crontab jobs like
+    Desidime kept running). `offset` staggers feeds off :00/:30, where the
+    validation sweep fires. Cadences that don't divide an hour/day evenly fall
+    back to a countdown."""
+    if minutes <= 0:
+        return timedelta(minutes=1)
+    if minutes < 60 and 60 % minutes == 0:
+        return crontab(minute=f"{offset % minutes}-59/{minutes}")
+    if minutes % 60 == 0 and 24 % (minutes // 60) == 0:
+        return crontab(minute=offset % 60, hour=f"*/{minutes // 60}")
+    if minutes % 1440 == 0:
+        return crontab(minute=offset % 60, hour=3, day_of_month=f"*/{minutes // 1440}")
+    return timedelta(minutes=minutes)
+
+
 celery_app.conf.beat_schedule = {
     # Re-validation sweep: dispatch due coupons periodically.
     "enqueue-revalidations": {
@@ -597,51 +616,51 @@ celery_app.conf.beat_schedule = {
     # LinkMyDeals incremental feed sync (API call — runs on its own cadence).
     "sync-linkmydeals": {
         "task": "sync_linkmydeals",
-        "schedule": timedelta(minutes=get_settings().linkmydeals_sync_frequency_minutes),
+        "schedule": _clock(get_settings().linkmydeals_sync_frequency_minutes, offset=5),
     },
     # Cuelinks Offers feed sync (coupons + deals across 400+ merchants).
     "sync-cuelinks": {
         "task": "sync_cuelinks",
-        "schedule": timedelta(minutes=get_settings().cuelinks_sync_frequency_minutes),
+        "schedule": _clock(get_settings().cuelinks_sync_frequency_minutes, offset=10),
     },
     # Involve Asia Offers feed sync (India + SE Asia merchants).
     "sync-involve-asia": {
         "task": "sync_involve_asia",
-        "schedule": timedelta(minutes=get_settings().involve_asia_sync_frequency_minutes),
+        "schedule": _clock(get_settings().involve_asia_sync_frequency_minutes, offset=20),
     },
     # vCommission (Trackier) coupons + deals sync (India merchants).
     "sync-vcommission": {
         "task": "sync_vcommission",
-        "schedule": timedelta(minutes=get_settings().vcommission_sync_frequency_minutes),
+        "schedule": _clock(get_settings().vcommission_sync_frequency_minutes, offset=25),
     },
     # Admitad (Mitgo) coupons sync (global + India merchants).
     "sync-admitad": {
         "task": "sync_admitad",
-        "schedule": timedelta(minutes=get_settings().admitad_sync_frequency_minutes),
+        "schedule": _clock(get_settings().admitad_sync_frequency_minutes, offset=40),
     },
     # Feedico coupon-catalog sync (slow cadence — free tier is 1000 req/month).
     "sync-feedico": {
         "task": "sync_feedico",
-        "schedule": timedelta(minutes=get_settings().feedico_sync_frequency_minutes),
+        "schedule": _clock(get_settings().feedico_sync_frequency_minutes, offset=50),
     },
     # Free Trials: LLM-extract/refresh trial facts (no-op until an LLM key is set).
     "extract-trials": {
         "task": "extract_due_trials",
-        "schedule": timedelta(minutes=get_settings().trial_extract_frequency_minutes),
+        "schedule": _clock(get_settings().trial_extract_frequency_minutes, offset=45),
     },
     # Free Trials: live verify trial links (no-op until TRIAL_VERIFICATION_ENABLED).
     "verify-trials": {
         "task": "verify_due_trials",
-        "schedule": timedelta(minutes=get_settings().trial_verify_frequency_minutes),
+        "schedule": _clock(get_settings().trial_verify_frequency_minutes, offset=55),
     },
     # Free Trials: send cancel-reminders (stores work always; emails once keyed).
     "send-reminders": {
         "task": "send_due_reminders",
-        "schedule": timedelta(minutes=get_settings().reminder_check_frequency_minutes),
+        "schedule": _clock(get_settings().reminder_check_frequency_minutes, offset=2),
     },
     # Traffic: post newly-verified coupons/trials to Telegram (no-op until keyed).
     "post-telegram": {
         "task": "post_new_to_telegram",
-        "schedule": timedelta(minutes=get_settings().telegram_post_frequency_minutes),
+        "schedule": _clock(get_settings().telegram_post_frequency_minutes, offset=15),
     },
 }
