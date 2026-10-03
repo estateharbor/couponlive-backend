@@ -36,9 +36,19 @@ day. Never pad.
 
 ## 3. Verify every item on the official page (mandatory)
 
-Open the merchant's / vendor's OWN page (fetch it; if it's JS-rendered and the
-fetch is empty, try another official page — app/offer T&C, help centre, press
-release on the company's domain). Confirm from that page:
+Open the merchant's / vendor's OWN page. Big Indian store sites block cloud
+servers and many are JS-rendered, so use the most reliable reader you have:
+
+1. **Built-in browser** (when running in the Claude desktop app on the owner's
+   PC — tools named `mcp__Claude_Browser__*`): `navigate` to the page, wait a
+   few seconds, then `get_page_text` (or `javascript_tool` with
+   `document.body.innerText`). This loads the page like a normal visitor.
+   Decline cookie banners; never sign in, never submit forms, never buy.
+2. `WebFetch` — fine for most SaaS/vendor pages.
+3. `curl -sL` from Bash, as a last resort.
+
+If the page is JS-rendered and empty, try another official page — app/offer
+T&C, help centre, press release on the company's domain. Confirm from that page:
 - the code (exact spelling) or that it's code-less,
 - the benefit (%, ₹ amount, cap, minimum order),
 - eligibility (new users, app-only, specific bank card…),
@@ -115,6 +125,9 @@ python -m scheduler.import_editorial --check data/editorial/scout-....csv
 python -m scheduler.seed_trials --check data/editorial/trials/scout-....csv
 python -m pytest -q tests/test_scout_inputs.py tests/test_editorial_freshness.py tests/test_import_editorial.py
 ```
+
+(On the owner's Windows PC, skip the `pip install` and use the repo's virtualenv:
+`.venv/Scripts/python.exe` in place of `python`.)
 
 Run only those test files: the rest of the suite includes checkout-validator
 tests that need a headless browser this sandbox doesn't provide, and they fail
