@@ -113,11 +113,13 @@ Skip either file if you have nothing new for it.
 pip install -q -r requirements.txt
 python -m scheduler.import_editorial --check data/editorial/scout-....csv
 python -m scheduler.seed_trials --check data/editorial/trials/scout-....csv
-python -m pytest -q
+python -m pytest -q tests/test_scout_inputs.py tests/test_editorial_freshness.py tests/test_import_editorial.py
 ```
 
-Fix every reported PROBLEM (or drop that row) until both checks report 0
-problems and tests pass. Do not push otherwise.
+Run only those test files: the rest of the suite includes checkout-validator
+tests that need a headless browser this sandbox doesn't provide, and they fail
+here regardless of your data. Fix every reported PROBLEM (or drop that row)
+until both checks report 0 problems and those tests pass. Do not push otherwise.
 
 ## 7. Publish
 
