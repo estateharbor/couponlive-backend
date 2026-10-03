@@ -148,6 +148,24 @@ def _compose_description(row: dict, discount_known: bool) -> str:
     return desc if discount_known else _mask_currency(desc)
 
 
+def _merchant_home(row: dict) -> str | None:
+    """Optional `merchant_home` CSV column: the store's OWN homepage, for stores
+    not yet in MERCHANT_HOME (so new merchants need no code change). Must be a
+    plain https URL — never an aggregator/affiliate link."""
+    url = (row.get("merchant_home") or "").strip()
+    if not re.match(r"^https://[a-z0-9.-]+\.[a-z]{2,}(/[^\s?#]*)?$", url, re.IGNORECASE):
+        return None
+    host = url.split("/")[2].lower()
+    if any(a in host for a in _AGGREGATOR_HOSTS):
+        return None
+    return url
+
+
+# Click-outs must never point at a coupon aggregator / affiliate redirector.
+_AGGREGATOR_HOSTS = ("grabon", "desidime", "couponzguru", "coupondunia", "cashkaro",
+                     "linksredirect", "admitad", "tjzuh", "vcommission", "cuelinks")
+
+
 def _keep(row: dict) -> str | None:
     """Return 'code' | 'deal' for rows to import, else None (skip)."""
     cat = (row.get("category") or "").strip().lower()
@@ -177,7 +195,7 @@ def build_raw(rows: list[dict], now: datetime) -> list[RawCoupon]:
         dtype, dval = _parse_discount(row.get("headline") or "")
         description = _compose_description(row, dtype is not DiscountType.unknown)
         slug = (row.get("slug_suggestion") or "").strip() or None
-        home = MERCHANT_HOME.get(normalize_merchant_name(store))
+        home = MERCHANT_HOME.get(normalize_merchant_name(store)) or _merchant_home(row)
         raws.append(
             RawCoupon(
                 merchant_name=store,
@@ -216,6 +234,47 @@ def _enqueue_validation(session) -> int:
     except Exception as exc:  # broker down / not in a worker — import still succeeded
         log.warning("editorial.enqueue_failed", error=str(exc))
         return 0
+
+
+def check(path: str | Path) -> int:
+    """Dry-run a CSV with NO database: print what each row would become and flag
+    problems. Returns the number of problems (0 = safe to publish)."""
+    path = Path(path)
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        missing = [c for c in REQUIRED_COLUMNS if c not in (reader.fieldnames or [])]
+        rows = list(reader)
+    problems = 0
+    if missing:
+        print(f"! missing columns: {missing}")
+        return 1
+    now = datetime.now(timezone.utc)
+    for i, row in enumerate(rows, start=2):
+        kind = _keep(row)
+        store = (row.get("store") or "").strip()
+        label = f"line {i}: {store} {(row.get('code') or '(deal)').strip()}"
+        if kind is None:
+            print(f"- {label}: skipped by importer rules")
+            continue
+        raw = build_raw([row], now)[0]
+        issues = []
+        if not raw.source_url:
+            issues.append("no click-out URL: add the store to MERCHANT_HOME or fill merchant_home")
+        if not (row.get("slug_suggestion") or "").strip():
+            issues.append("slug_suggestion is empty")
+        if raw.expires_at is not None and raw.expires_at < now:
+            issues.append(f"end date already passed ({row.get('expiry')})")
+        status = "OK" if not issues else "PROBLEM: " + "; ".join(issues)
+        problems += bool(issues)
+        print(f"+ {label}: {raw.discount_type.value} {raw.discount_value} -> {raw.source_url} "
+              f"| ends {raw.expires_at.date() if raw.expires_at else 'undated'} | {status}")
+    print(f"{len(rows)} row(s), {problems} problem(s)")
+    return problems
+
+
+REQUIRED_COLUMNS = ("store", "category", "code", "headline", "description", "how_to_redeem",
+                    "expiry", "terms", "verified_note", "source_url", "code_type",
+                    "slug_suggestion")
 
 
 def main(path: str | Path = DEFAULT_CSV) -> None:
@@ -301,6 +360,8 @@ def backfill_expiry(session, paths: list[Path]) -> int:
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if args and args[0] == "--check":
+        sys.exit(1 if sum(check(a) for a in args[1:]) else 0)
     if args and args[0] == "--backfill-expiry":
         files = [Path(a) for a in args[1:]] or sorted(Path("data/editorial").glob("*.csv"))
         s = get_sessionmaker()()

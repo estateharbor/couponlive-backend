@@ -11,6 +11,10 @@ tool+title), so it's safe to run repeatedly.
 """
 from __future__ import annotations
 
+import csv
+import sys
+from pathlib import Path
+
 from sqlalchemy import select
 
 from core.logging import get_logger
@@ -427,6 +431,93 @@ def dedupe_offers(session) -> int:
     return removed
 
 
+# Trials can also be added as data (no code change) — one CSV per batch in
+# data/editorial/trials/. Same fields as SEED rows. See docs/offer-scout.md.
+TRIALS_DIR = Path("data/editorial/trials")
+TRIAL_COLUMNS = ("name", "slug", "vendor", "category", "ai", "website", "pricing",
+                 "offer_type", "title", "trial_days", "card_required", "india_available",
+                 "eligibility", "renew_inr", "renew_usd", "renew_period", "credit_amount",
+                 "credit_currency", "signup_url")
+_TOOL_FIELDS = ("name", "vendor", "category", "ai", "website", "pricing")
+
+
+def _bool(v: str) -> bool | None:
+    v = (v or "").strip().lower()
+    return True if v in ("true", "yes", "1") else False if v in ("false", "no", "0") else None
+
+
+def _num(v: str, cast):
+    v = (v or "").strip().replace(",", "")
+    return cast(v) if v else None
+
+
+def load_trial_csv(path: Path, existing: list[dict]) -> tuple[list[dict], list[str]]:
+    """Parse a trials CSV into SEED-shaped rows. A slug already defined in SEED
+    keeps ITS tool-level fields (name/website/…), so a CSV row can't overwrite a
+    tool's details. Returns (rows, problems)."""
+    by_slug = {r["slug"]: r for r in existing}
+    rows: list[dict] = []
+    problems: list[str] = []
+    with Path(path).open(encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        missing = [c for c in ("name", "slug", "offer_type", "title", "signup_url")
+                   if c not in (reader.fieldnames or [])]
+        if missing:
+            return [], [f"{path}: missing columns {missing}"]
+        for i, r in enumerate(reader, start=2):
+            where = f"{path.name} line {i}"
+            slug = (r.get("slug") or "").strip().lower()
+            title = (r.get("title") or "").strip()
+            signup = (r.get("signup_url") or "").strip()
+            try:
+                otype = TrialOfferType((r.get("offer_type") or "").strip())
+            except ValueError:
+                problems.append(f"{where}: bad offer_type {r.get('offer_type')!r}")
+                continue
+            if not slug or not title or not signup.startswith("https://"):
+                problems.append(f"{where}: slug/title/https signup_url required")
+                continue
+            try:
+                row = dict(
+                    name=(r.get("name") or "").strip(), slug=slug,
+                    vendor=(r.get("vendor") or "").strip() or None,
+                    category=(r.get("category") or "").strip() or None,
+                    ai=bool(_bool(r.get("ai", ""))),
+                    website=(r.get("website") or "").strip() or signup,
+                    pricing=(r.get("pricing") or "").strip() or None,
+                    offer_type=otype, title=title,
+                    trial_days=_num(r.get("trial_days", ""), int),
+                    card_required=_bool(r.get("card_required", "")),
+                    india_available=_bool(r.get("india_available", "")),
+                    eligibility=(r.get("eligibility") or "").strip()[:512] or None,
+                    renew_inr=_num(r.get("renew_inr", ""), float),
+                    renew_usd=_num(r.get("renew_usd", ""), float),
+                    renew_period=(r.get("renew_period") or "").strip() or None,
+                    credit_amount=_num(r.get("credit_amount", ""), float),
+                    credit_currency=(r.get("credit_currency") or "").strip() or None,
+                    signup_url=signup,
+                )
+            except ValueError as exc:
+                problems.append(f"{where}: {exc}")
+                continue
+            if slug in by_slug:
+                for k in _TOOL_FIELDS:
+                    row[k] = by_slug[slug].get(k)
+            rows.append(row)
+            by_slug.setdefault(slug, row)
+    return rows, problems
+
+
+def all_rows() -> list[dict]:
+    rows = list(SEED)
+    for path in sorted(TRIALS_DIR.glob("*.csv")):
+        extra, problems = load_trial_csv(path, rows)
+        for p in problems:
+            log.warning("seed.trial_csv_problem", problem=p)
+        rows.extend(extra)
+    return rows
+
+
 def main() -> None:
     session = get_sessionmaker()()
     created_tools = created_offers = updated = retired = 0
@@ -448,7 +539,7 @@ def main() -> None:
         session.flush()
         deduped = dedupe_offers(session)
 
-        for row in SEED:
+        for row in all_rows():
             tool = session.scalar(select(Tool).where(Tool.slug == row["slug"]))
             if tool is None:
                 tool = Tool(slug=row["slug"])
@@ -499,4 +590,15 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["--check"]:
+        bad = 0
+        for f in sys.argv[2:]:
+            rows, problems = load_trial_csv(Path(f), list(SEED))
+            for r in rows:
+                print(f"+ {r['slug']}: {r['title']} [{r['offer_type'].value}]")
+            for p in problems:
+                print("!", p)
+            bad += len(problems)
+        print(f"{bad} problem(s)")
+        sys.exit(1 if bad else 0)
     main()

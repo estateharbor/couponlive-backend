@@ -173,6 +173,10 @@ def sync_linkmydeals() -> dict:
         source = session.scalar(select(Source).where(Source.name == "LinkMyDeals"))
         if source is not None:
             source.sync_cursor = str(run_ts)
+            # An incremental pull with no changes is a HEALTHY run (ingest_raw only
+            # stamps success when rows came back) — don't let quiet hours look stale.
+            if not summary.errors:
+                source.last_success_at = utcnow()
             session.commit()
 
         # New codes still go through checkout validation like any other source
