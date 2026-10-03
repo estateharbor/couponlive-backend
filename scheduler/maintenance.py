@@ -49,16 +49,29 @@ def expire_stale_coupons(session: Session, *, commit: bool = True) -> int:
     cutoff = now - timedelta(hours=settings.stale_expire_hours)
     editorial_cutoff = now - timedelta(days=settings.editorial_expire_days)
 
+    # A stated end date is authoritative: past it, the code is expired whatever
+    # its confidence; before it, the staleness window below doesn't apply.
+    expired = 0
+    for c in session.scalars(
+        select(Coupon).where(
+            Coupon.status != CouponStatus.expired,
+            Coupon.expires_at.is_not(None),
+            Coupon.expires_at < now,
+        )
+    ):
+        c.status = CouponStatus.expired
+        expired += 1
+
     candidates = session.scalars(
         select(Coupon).where(
             Coupon.status != CouponStatus.expired,
+            Coupon.expires_at.is_(None),
             Coupon.confidence_score < LOW_CONFIDENCE,
             or_(Coupon.last_validated_at.is_(None), Coupon.last_validated_at < cutoff),
         )
     ).all()
     editorial = _editorial_coupon_ids(session) if candidates else set()
 
-    expired = 0
     for c in candidates:
         # Never-validated coupons expire only once no source has listed them for
         # the window (last_seen, not first_seen — a code a feed or editor is still

@@ -145,6 +145,10 @@ class Coupon(Base, TimestampMixin):
     # invalid) result. Drives the re-validation circuit-breaker: a code that
     # keeps coming back inconclusive (site blocks us) backs off to a long cooldown.
     unverifiable_streak: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # The merchant's stated end date, when a source gives one (editorial rows
+    # like "valid till 31 Dec 2026"). Overrides the staleness window: the code
+    # stays listed until then and is expired once it passes.
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     merchant: Mapped["Merchant"] = relationship(back_populates="coupons")
     sources: Mapped[list["CouponSource"]] = relationship(

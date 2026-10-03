@@ -42,6 +42,7 @@ class RawCoupon(BaseModel):
     source_url: str | None = None
     scraped_at: datetime
     ingestion_method: IngestionMethod = IngestionMethod.scrape_requests
+    expires_at: datetime | None = None  # merchant's stated end date, if known
 
 
 # --- Validation contract (validators return this) ------------------------

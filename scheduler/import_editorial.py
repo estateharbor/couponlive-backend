@@ -25,7 +25,7 @@ from __future__ import annotations
 import csv
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from core.config import get_settings
@@ -96,6 +96,39 @@ def _parse_discount(headline: str) -> tuple[DiscountType, float | None]:
     return DiscountType.unknown, None
 
 
+_MONTHS = {m: i for i, m in enumerate(
+    ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+# The whole expiry cell is a date, optionally prefixed "valid till/until/through"
+# ("31 Dec 2026", "31-Dec-26", "Till 31 Oct 2026 (per GrabOn)"). Anything
+# vaguer ("Check at checkout", "main sale from 8 Oct (end TBA)") is NOT an end
+# date → None.
+_EXPIRY_RE = re.compile(
+    r"^\s*(?:(?:valid\s+)?(?:till|until|through|thru|to)\s+)?"
+    r"(\d{1,2})[\s-]+([a-z]{3,9})\.?,?[\s-]+(\d{4}|\d{2})"
+    r"\s*\.?\s*(?:\([^)]*\))?\s*$",
+    re.IGNORECASE,
+)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def _parse_expiry(text: str) -> datetime | None:
+    """The offer's end date as the END of that day in India (23:59:59 IST), or
+    None when the cell isn't a plain date."""
+    m = _EXPIRY_RE.match(text or "")
+    if not m:
+        return None
+    month = _MONTHS.get(m.group(2)[:3].lower())
+    if month is None:
+        return None
+    year = int(m.group(3))
+    year += 2000 if year < 100 else 0
+    try:
+        day = datetime(year, month, int(m.group(1)), 23, 59, 59, tzinfo=IST)
+    except ValueError:
+        return None
+    return day.astimezone(timezone.utc)
+
+
 def _mask_currency(text: str) -> str:
     """Rewrite '₹499'/'Rs 499' as '499 rupees' so the discount reconciler
     (scrapers.normalize.sanitize_discount) doesn't mistake a MIN-ORDER amount for
@@ -157,6 +190,7 @@ def build_raw(rows: list[dict], now: datetime) -> list[RawCoupon]:
                 source_url=home,  # merchant homepage, NEVER the aggregator
                 scraped_at=now,
                 ingestion_method=IngestionMethod.scrape_requests,
+                expires_at=_parse_expiry(row.get("expiry") or ""),
             )
         )
     return raws
@@ -219,5 +253,62 @@ def main(path: str | Path = DEFAULT_CSV) -> None:
         print("  !", err)
 
 
+def backfill_expiry(session, paths: list[Path]) -> int:
+    """Set `expires_at` on already-imported editorial coupons from their CSVs,
+    WITHOUT re-importing (so last_seen — and the 14-day editorial window for
+    undated codes — isn't reset). A dated code that was expired early by the
+    old staleness rule comes back as `unverified` if its end date is ahead.
+    Returns the number of coupons whose end date was set."""
+    from sqlalchemy import select
+
+    from models.base import utcnow
+    from models.enums import CouponStatus
+    from models.models import Coupon, Merchant
+    from scrapers.normalize import normalize_code
+
+    now = utcnow()
+    updated = 0
+    for path in paths:
+        with Path(path).open(encoding="utf-8-sig", newline="") as f:
+            rows = list(csv.DictReader(f))
+        for row in rows:
+            kind = _keep(row)
+            when = _parse_expiry(row.get("expiry") or "")
+            if kind is None or when is None:
+                continue
+            merchant = session.scalar(select(Merchant).where(
+                Merchant.normalized_name == normalize_merchant_name(row.get("store") or "")))
+            if merchant is None:
+                continue
+            stmt = select(Coupon).where(Coupon.merchant_id == merchant.id)
+            code = normalize_code(row.get("code")) if kind == "code" else None
+            slug = (row.get("slug_suggestion") or "").strip()
+            if code:
+                stmt = stmt.where(Coupon.code == code)
+            elif slug:
+                stmt = stmt.where(Coupon.code.is_(None), Coupon.external_ref == slug)
+            else:
+                continue
+            coupon = session.scalar(stmt)
+            if coupon is None:
+                continue
+            coupon.expires_at = when
+            if coupon.status is CouponStatus.expired and when > now:
+                coupon.status = CouponStatus.unverified
+            updated += 1
+    session.commit()
+    return updated
+
+
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_CSV)
+    args = sys.argv[1:]
+    if args and args[0] == "--backfill-expiry":
+        files = [Path(a) for a in args[1:]] or sorted(Path("data/editorial").glob("*.csv"))
+        s = get_sessionmaker()()
+        try:
+            print(f"end dates set on {backfill_expiry(s, files)} coupons "
+                  f"from {len(files)} CSV file(s)")
+        finally:
+            s.close()
+    else:
+        main(args[0] if args else DEFAULT_CSV)

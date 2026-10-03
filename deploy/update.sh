@@ -20,6 +20,9 @@ for csv in "$@"; do
   docker compose exec -T worker python -m scheduler.import_editorial "$csv"
 done
 
+log "applying end dates from editorial CSVs"
+docker compose exec -T worker python -m scheduler.import_editorial --backfill-expiry
+
 log "refreshing free trials"
 docker compose exec -T worker python -m scheduler.seed_trials
 

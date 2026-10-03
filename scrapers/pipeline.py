@@ -115,6 +115,7 @@ def _upsert_coupon(
             first_seen=nc.first_seen,
             last_seen=nc.last_seen,
             status=CouponStatus.unverified,
+            expires_at=nc.expires_at,
         )
         session.add(coupon)
         session.flush()
@@ -123,13 +124,18 @@ def _upsert_coupon(
         # Keep earliest first_seen, advance last_seen, backfill missing fields.
         coupon.first_seen = min(_aware(coupon.first_seen), _aware(nc.first_seen))
         coupon.last_seen = max(_aware(coupon.last_seen), _aware(nc.last_seen))
-        # Seen again by a source → no longer stale. Bring an expired code back as
-        # `unverified` (never `valid` — that is still earned only via validation).
-        if coupon.status is CouponStatus.expired:
-            coupon.status = CouponStatus.unverified
         # An affiliate feed is authoritative for its own offers, and so is a
         # hand-checked editorial import (current text from the merchant's page).
         authoritative = authoritative or source.ingestion_method is IngestionMethod.affiliate_api
+        # End date: the latest stated date wins; a source without one keeps it.
+        if nc.expires_at is not None:
+            coupon.expires_at = nc.expires_at
+        # Seen again → no longer stale: bring an expired code back as
+        # `unverified` (never `valid`), unless its stated end date has passed.
+        if coupon.status is CouponStatus.expired and not (
+            coupon.expires_at is not None and _aware(coupon.expires_at) < utcnow()
+        ):
+            coupon.status = CouponStatus.unverified
         # Description: other sources fill only gaps; an affiliate feed is
         # authoritative, so refresh it (heals stale HTML-encoded text like
         # "&#8377;500" that predates the html.unescape mapping).

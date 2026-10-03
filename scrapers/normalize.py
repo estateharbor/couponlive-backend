@@ -94,6 +94,7 @@ class NormalizedCoupon:
     last_seen: datetime
     # provenance: list of (source_url, seen_at, ingestion_method)
     sources: list[tuple[str | None, datetime, IngestionMethod]] = field(default_factory=list)
+    expires_at: datetime | None = None
 
     @property
     def identity(self) -> tuple[str, str]:
@@ -183,6 +184,7 @@ def normalize_and_dedupe(raw: list[RawCoupon]) -> list[NormalizedCoupon]:
             first_seen=rc.scraped_at,
             last_seen=rc.scraped_at,
             sources=[(rc.source_url, rc.scraped_at, rc.ingestion_method)],
+            expires_at=rc.expires_at,
         )
 
         key = nc.identity
@@ -199,6 +201,8 @@ def normalize_and_dedupe(raw: list[RawCoupon]) -> list[NormalizedCoupon]:
                 existing.discount_type = nc.discount_type
             if existing.discount_value is None:
                 existing.discount_value = nc.discount_value
+            if existing.expires_at is None:
+                existing.expires_at = nc.expires_at
             existing.sources.extend(nc.sources)
 
     return list(merged.values())
