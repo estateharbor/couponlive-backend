@@ -29,10 +29,10 @@ def test_one_bad_row_keeps_the_rest(db_session, monkeypatch):
 
     original = pipeline._upsert_coupon
 
-    def flaky(session, source, nc, summary):
+    def flaky(session, source, nc, summary, **kw):
         if nc.code == "BOOM":
             raise ValueError("simulated constraint violation")
-        return original(session, source, nc, summary)
+        return original(session, source, nc, summary, **kw)
 
     monkeypatch.setattr(pipeline, "_upsert_coupon", flaky)
     summary = ingest_raw(db_session, "TestSrc", batch)

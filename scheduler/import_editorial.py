@@ -200,7 +200,7 @@ def main(path: str | Path = DEFAULT_CSV) -> None:
 
     session = get_sessionmaker()()
     try:
-        summary = ingest_raw(session, SOURCE_NAME, raws)
+        summary = ingest_raw(session, SOURCE_NAME, raws, authoritative=True)
         queued = _enqueue_validation(session)
     finally:
         session.close()

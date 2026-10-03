@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     # Freshness / staleness policy
     serve_freshness_hours: int = Field(4, alias="SERVE_FRESHNESS_HOURS")
     stale_expire_hours: int = Field(48, alias="STALE_EXPIRE_HOURS")
+    # Hand-checked editorial codes mostly can't be checkout-validated (login-gated
+    # / food / travel), so they get a longer shelf life from their last import.
+    editorial_expire_days: int = Field(14, alias="EDITORIAL_EXPIRE_DAYS")
 
     # Proxy hook (interface only — no provider wired)
     proxy_provider: str = Field("", alias="PROXY_PROVIDER")

@@ -91,7 +91,12 @@ def _find_coupon(session: Session, merchant_id: int, nc: NormalizedCoupon) -> Co
 
 
 def _upsert_coupon(
-    session: Session, source: Source, nc: NormalizedCoupon, summary: IngestSummary
+    session: Session,
+    source: Source,
+    nc: NormalizedCoupon,
+    summary: IngestSummary,
+    *,
+    authoritative: bool = False,
 ) -> None:
     merchant = _get_or_create_merchant(
         session, nc.merchant_name, nc.normalized_merchant, summary
@@ -118,18 +123,22 @@ def _upsert_coupon(
         # Keep earliest first_seen, advance last_seen, backfill missing fields.
         coupon.first_seen = min(_aware(coupon.first_seen), _aware(nc.first_seen))
         coupon.last_seen = max(_aware(coupon.last_seen), _aware(nc.last_seen))
+        # Seen again by a source → no longer stale. Bring an expired code back as
+        # `unverified` (never `valid` — that is still earned only via validation).
+        if coupon.status is CouponStatus.expired:
+            coupon.status = CouponStatus.unverified
+        # An affiliate feed is authoritative for its own offers, and so is a
+        # hand-checked editorial import (current text from the merchant's page).
+        authoritative = authoritative or source.ingestion_method is IngestionMethod.affiliate_api
         # Description: other sources fill only gaps; an affiliate feed is
         # authoritative, so refresh it (heals stale HTML-encoded text like
         # "&#8377;500" that predates the html.unescape mapping).
-        if nc.description and (
-            not coupon.description
-            or source.ingestion_method is IngestionMethod.affiliate_api
-        ):
+        if nc.description and (not coupon.description or authoritative):
             coupon.description = nc.description
         # Discount info: an affiliate feed is authoritative for its own offers, so
         # REFRESH from it (self-heals rows created from an earlier/looser mapping);
         # other sources only fill gaps.
-        if source.ingestion_method is IngestionMethod.affiliate_api:
+        if authoritative:
             # The feed is authoritative for its own offers: set discount_type and
             # discount_value from the current read even when unknown/None, so a
             # stale value from an earlier/looser mapping is CLEARED, not retained.
@@ -181,7 +190,12 @@ def _upsert_provenance(
 
 
 def ingest_raw(
-    session: Session, source_name: str, raw: list[RawCoupon], *, commit: bool = True
+    session: Session,
+    source_name: str,
+    raw: list[RawCoupon],
+    *,
+    commit: bool = True,
+    authoritative: bool = False,
 ) -> IngestSummary:
     """Normalize, dedupe, and upsert a raw batch; update source bookkeeping."""
     summary = IngestSummary(source=source_name, raw_count=len(raw))
@@ -203,7 +217,7 @@ def ingest_raw(
             # in this batch AND the source row created above — which silently
             # loses a whole feed when a single offer violates a constraint.
             with session.begin_nested():
-                _upsert_coupon(session, source, nc, summary)
+                _upsert_coupon(session, source, nc, summary, authoritative=authoritative)
         except Exception as exc:  # isolate a bad row; keep the rest of the batch
             (summary.coupons_created, summary.coupons_updated,
              summary.provenance_created, summary.merchants_created) = _before

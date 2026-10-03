@@ -15,7 +15,7 @@ from core.config import get_settings
 from core.logging import get_logger
 from models.base import utcnow
 from models.enums import CouponStatus
-from models.models import Coupon, Source
+from models.models import Coupon, CouponSource, Source
 
 log = get_logger("maintenance")
 
@@ -27,11 +27,27 @@ def _aware(dt):
     return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
 
 
+def _editorial_coupon_ids(session: Session) -> set[int]:
+    """Coupons listed by the hand-checked editorial import (see
+    scheduler/import_editorial.py), which get a longer shelf life."""
+    from scheduler.import_editorial import SOURCE_NAME
+
+    return set(
+        session.scalars(
+            select(CouponSource.coupon_id)
+            .join(Source, Source.id == CouponSource.source_id)
+            .where(Source.name == SOURCE_NAME)
+        )
+    )
+
+
 def expire_stale_coupons(session: Session, *, commit: bool = True) -> int:
     """Flag coupons expired when they're stale AND low-confidence, so stale data
     stops being served by default. Returns the number expired."""
     settings = get_settings()
-    cutoff = utcnow() - timedelta(hours=settings.stale_expire_hours)
+    now = utcnow()
+    cutoff = now - timedelta(hours=settings.stale_expire_hours)
+    editorial_cutoff = now - timedelta(days=settings.editorial_expire_days)
 
     candidates = session.scalars(
         select(Coupon).where(
@@ -40,13 +56,18 @@ def expire_stale_coupons(session: Session, *, commit: bool = True) -> int:
             or_(Coupon.last_validated_at.is_(None), Coupon.last_validated_at < cutoff),
         )
     ).all()
+    editorial = _editorial_coupon_ids(session) if candidates else set()
 
     expired = 0
     for c in candidates:
-        # Never validated coupons are only expired if they've also aged out by
-        # first_seen (avoid instantly expiring brand-new, not-yet-validated codes).
-        if c.last_validated_at is None and _aware(c.first_seen) >= cutoff:
-            continue
+        # Never-validated coupons expire only once no source has listed them for
+        # the window (last_seen, not first_seen — a code a feed or editor is still
+        # listing is not stale, however old it is). Hand-checked editorial codes
+        # mostly can't be validated, so they get the longer editorial window.
+        if c.last_validated_at is None:
+            window = editorial_cutoff if c.id in editorial else cutoff
+            if _aware(c.last_seen) >= window:
+                continue
         c.status = CouponStatus.expired
         expired += 1
 
