@@ -62,6 +62,8 @@ MERCHANT_HOME: dict[str, str] = {
     "flipkart": "https://www.flipkart.com",
     "tatacliqluxury": "https://luxury.tatacliq.com",
     "swiggydineout": "https://www.swiggy.com/dineout",
+    "goibibo": "https://www.goibibo.com",
+    "boat": "https://www.boat-lifestyle.com",
 }
 
 # Wallet/bank intermediaries (and "via <platform>" combos) that must not be
