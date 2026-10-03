@@ -32,3 +32,77 @@ def test_sync_schedule_targets_correct_tasks():
     sched = celery_app.conf.beat_schedule
     assert sched["sync-linkmydeals"]["task"] == "sync_linkmydeals"
     assert sched["sync-cuelinks"]["task"] == "sync_cuelinks"
+
+
+def test_validations_have_their_own_queue_and_worker_consumes_both():
+    """Validation backlog must not starve feed syncs (LinkMyDeals went 12h+
+    without a run while validations outranked it on one shared queue)."""
+    from scheduler.celery_app import celery_app
+
+    assert celery_app.amqp.router.route({}, "validate_coupon")["queue"].name == "validation"
+    assert celery_app.amqp.router.route({}, "sync_linkmydeals")["queue"].name == "celery"
+    assert {q.name for q in celery_app.conf.task_queues} >= {"celery", "validation"}
+    vt = celery_app.tasks["validate_coupon"]
+    assert vt.time_limit and vt.soft_time_limit  # a hung browser can't hold a slot
+
+
+def test_enqueue_validation_dedupes_pending_coupon(monkeypatch):
+    import scheduler.tasks as tasks
+
+    class FakeRedis:
+        def __init__(self):
+            self.keys = {}
+
+        def set(self, key, val, nx=False, ex=None):
+            if nx and key in self.keys:
+                return False
+            self.keys[key] = val
+            return True
+
+        def delete(self, key):
+            self.keys.pop(key, None)
+
+    fake = FakeRedis()
+    sent = []
+    monkeypatch.setattr(tasks, "_redis", lambda: fake)
+    monkeypatch.setattr(tasks.validate_coupon, "apply_async",
+                        lambda args, priority: sent.append((args[0], priority)))
+
+    assert tasks.enqueue_validation(7, priority=1) is True
+    assert tasks.enqueue_validation(7, priority=1) is False     # already pending
+    tasks._clear_pending(7)                                      # job finished
+    assert tasks.enqueue_validation(7, priority=1) is True
+    assert sent == [(7, 1), (7, 1)]
+
+
+def test_purge_old_validations_keeps_other_jobs():
+    import json
+
+    from scheduler.queues import purge_old_validations
+
+    def msg(task, n):
+        return json.dumps({"headers": {"task": task, "id": str(n)}}).encode()
+
+    class FakeRedis:
+        def __init__(self):
+            self.lists = {b"celery": [msg("validate_coupon", 1), msg("sync_linkmydeals", 2),
+                                      msg("validate_coupon", 3)],
+                          b"validation": [msg("validate_coupon", 4)]}
+
+        def scan_iter(self, match=None):
+            return iter(list(self.lists))
+
+        def type(self, k):
+            return b"list"
+
+        def lrange(self, k, a, b):
+            return list(self.lists[k])
+
+        def lrem(self, k, n, v):
+            self.lists[k].remove(v)
+            return 1
+
+    r = FakeRedis()
+    assert purge_old_validations(r) == 2
+    assert [json.loads(m)["headers"]["task"] for m in r.lists[b"celery"]] == ["sync_linkmydeals"]
+    assert len(r.lists[b"validation"]) == 1          # new queue untouched

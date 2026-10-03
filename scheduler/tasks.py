@@ -40,6 +40,39 @@ def _redact(text: str) -> str:
     return _SECRET_RE.sub(r"\1REDACTED", text)
 
 
+# A coupon is only ever queued ONCE at a time. Without this, the 30-min sweep
+# re-queued the same up-to-500 coupons every run (they're only marked checked
+# after the job runs), so the backlog grew without bound.
+_PENDING_KEY = "couponlive:validate:pending:{}"
+_PENDING_TTL_SECONDS = 6 * 3600  # safety net if a job dies without clearing it
+
+
+def _redis():
+    import redis
+
+    return redis.Redis.from_url(get_settings().redis_url)
+
+
+def enqueue_validation(coupon_id: int, priority: int = 0) -> bool:
+    """Queue a checkout validation unless one is already pending for this coupon.
+    Returns True if queued. Falls back to plain queuing if Redis can't be reached."""
+    try:
+        if not _redis().set(_PENDING_KEY.format(coupon_id), 1, nx=True,
+                            ex=_PENDING_TTL_SECONDS):
+            return False
+    except Exception as exc:  # noqa: BLE001 — dedupe is best-effort
+        log.warning("validate.dedupe_unavailable", error=str(exc))
+    validate_coupon.apply_async(args=[coupon_id], priority=priority)
+    return True
+
+
+def _clear_pending(coupon_id: int) -> None:
+    try:
+        _redis().delete(_PENDING_KEY.format(coupon_id))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _record_feed_outcome(source_name: str, error: str | None) -> None:
     """Store (or clear) the feed's last error on its Source row for /health."""
     from models.enums import IngestionMethod
@@ -100,7 +133,7 @@ def scrape_source(source_name: str) -> dict:
         if get_settings().validation_enabled:
             for _prio, coupon in select_coupons_to_validate(session, limit=200):
                 if coupon.last_validated_at is None:
-                    validate_coupon.apply_async(args=[coupon.id], priority=0)
+                    enqueue_validation(coupon.id, priority=0)
         return {"source": source_name, "created": summary.coupons_created,
                 "deduped": summary.deduped_count}
     finally:
@@ -147,7 +180,7 @@ def sync_linkmydeals() -> dict:
         if get_settings().validation_enabled:
             for _prio, coupon in select_coupons_to_validate(session, limit=500):
                 if coupon.last_validated_at is None:
-                    validate_coupon.apply_async(args=[coupon.id], priority=0)
+                    enqueue_validation(coupon.id, priority=0)
 
         return {"source": "LinkMyDeals", "created": summary.coupons_created,
                 "updated": summary.coupons_updated, "expired": expired,
@@ -468,8 +501,17 @@ def send_due_reminders() -> dict:
         session.close()
 
 
-@celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60)
+@celery_app.task(name="validate_coupon", bind=True, max_retries=2, default_retry_delay=60,
+                 soft_time_limit=150, time_limit=180)
 def validate_coupon(self, coupon_id: int) -> dict:
+    # A hung browser must not hold one of the worker's two slots forever.
+    try:
+        return _validate_coupon(coupon_id)
+    finally:
+        _clear_pending(coupon_id)
+
+
+def _validate_coupon(coupon_id: int) -> dict:
     from models.models import Coupon  # local import to keep task module light
 
     if not get_settings().validation_enabled:
@@ -521,8 +563,8 @@ def enqueue_revalidations() -> dict:
     try:
         dispatched = 0
         for prio, coupon in select_coupons_to_validate(session, limit=500):
-            validate_coupon.apply_async(args=[coupon.id], priority=prio)
-            dispatched += 1
+            if enqueue_validation(coupon.id, priority=prio):
+                dispatched += 1
         return {"dispatched": dispatched}
     finally:
         session.close()

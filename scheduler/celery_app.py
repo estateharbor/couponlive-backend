@@ -14,6 +14,7 @@ couple scheduling to the API service — fine for a toy, awkward for this.
 from __future__ import annotations
 
 from celery import Celery
+from kombu import Queue
 
 from core.config import get_settings
 
@@ -37,6 +38,15 @@ celery_app.conf.update(
     task_default_priority=5,
     task_track_started=True,
     timezone="UTC",
+    # Checkout validations (a real browser per job) go to their OWN queue. The
+    # worker consumes both queues round-robin, so a validation backlog can no
+    # longer starve the feed syncs — which is how LinkMyDeals silently stopped
+    # syncing for 12h+ (validations outranked it on the one shared queue).
+    task_routes={"validate_coupon": {"queue": "validation"}},
+    # Declared here (not only via `-Q` on the command line) so a worker started
+    # without -Q still consumes BOTH queues and validations are never stranded.
+    task_queues=(Queue("celery"), Queue("validation")),
+    task_default_queue="celery",
 )
 
 # The beat_schedule + @task registrations live in scheduler/tasks.py. Import it

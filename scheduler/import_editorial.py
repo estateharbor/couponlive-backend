@@ -205,14 +205,13 @@ def _enqueue_validation(session) -> int:
     if not get_settings().validation_enabled:
         return 0
     try:
-        from scheduler.tasks import validate_coupon
+        from scheduler.tasks import enqueue_validation
         from scheduler.validation import select_coupons_to_validate
 
         queued = 0
         for _prio, coupon in select_coupons_to_validate(session, limit=500):
             if coupon.last_checked_at is None:  # newly imported, never checked
-                validate_coupon.apply_async(args=[coupon.id], priority=0)
-                queued += 1
+                queued += enqueue_validation(coupon.id, priority=0)
         return queued
     except Exception as exc:  # broker down / not in a worker — import still succeeded
         log.warning("editorial.enqueue_failed", error=str(exc))
