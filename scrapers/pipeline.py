@@ -206,8 +206,11 @@ def ingest_raw(
     """Normalize, dedupe, and upsert a raw batch; update source bookkeeping."""
     summary = IngestSummary(source=source_name, raw_count=len(raw))
     # A source's rows are homogeneous in ingestion method; take it from the batch.
-    method = raw[0].ingestion_method if raw else IngestionMethod.scrape_requests
-    source = _get_or_create_source(session, source_name, method)
+    # (An empty batch carries no method — keep whatever the source row has.)
+    if raw:
+        source = _get_or_create_source(session, source_name, raw[0].ingestion_method)
+    else:
+        source = session.scalar(select(Source).where(Source.name == source_name)) or             _get_or_create_source(session, source_name, IngestionMethod.affiliate_api)
     source.last_scraped_at = utcnow()
 
     deduped = normalize_and_dedupe(raw)

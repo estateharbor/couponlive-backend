@@ -218,3 +218,70 @@ class LinkMyDealsFeedScraper(BaseScraper):
         log.info("linkmydeals.parsed", active=len(active),
                  suspended=len(self.suspended), total=len(offers))
         return active
+
+
+def diagnose() -> None:
+    """Run exactly what the scheduled sync runs (same cursor) and print what
+    LinkMyDeals answers, with the API key redacted.
+
+        docker compose exec worker python -m scrapers.linkmydeals_feed
+    """
+    from sqlalchemy import select
+
+    from models.base import get_sessionmaker
+    from models.models import Source
+
+    s = get_settings()
+    if not s.linkmydeals_api_key:
+        print("LINKMYDEALS_API_KEY not set — add it to .env first.")
+        return
+    session = get_sessionmaker()()
+    try:
+        src = session.scalar(select(Source).where(Source.name == "LinkMyDeals"))
+        cursor = src.sync_cursor if src else None
+        if src:
+            print(f"source: last_scraped_at={src.last_scraped_at} cursor={cursor} "
+                  f"last_error={getattr(src, 'last_error', None)!r}")
+    finally:
+        session.close()
+    if cursor:
+        print("cursor as time (UTC):",
+              datetime.fromtimestamp(int(cursor), timezone.utc).isoformat())
+
+    sc = LinkMyDealsFeedScraper(last_extract=int(cursor) if cursor else None)
+    params = sc._params()
+    print("GET", sc.api_url, {k: ("REDACTED" if k == "API_KEY" else v) for k, v in params.items()})
+    try:
+        resp = sc.session.get(sc.api_url, params=params, timeout=60)
+    except Exception as exc:  # noqa: BLE001
+        print("REQUEST FAILED:", type(exc).__name__, str(exc).replace(s.linkmydeals_api_key, "REDACTED"))
+        return
+    print("HTTP", resp.status_code, "| content-type:", resp.headers.get("content-type"),
+          "| bytes:", len(resp.content))
+    body = resp.text.replace(s.linkmydeals_api_key, "REDACTED")
+    try:
+        payload = resp.json()
+    except Exception:
+        print("NOT JSON — first 600 chars:\n", body[:600])
+        return
+    if isinstance(payload, dict):
+        print("top-level keys:", list(payload.keys())[:15])
+        for k in ("result", "error", "message", "status", "msg"):
+            if k in payload and not isinstance(payload[k], list):
+                print(f"  {k}:", str(payload[k])[:300])
+    offers = _extract_offers(payload)
+    statuses: dict[str, int] = {}
+    for it in offers:
+        st = str(_first(it, "status") or "?").lower()
+        statuses[st] = statuses.get(st, 0) + 1
+    print("offers in response:", len(offers), "| by status:", statuses)
+    try:
+        active = sc.scrape()
+        print("scrape() OK — active:", len(active), "suspended:", len(sc.suspended))
+    except Exception as exc:  # noqa: BLE001
+        print("scrape() RAISED:", type(exc).__name__,
+              str(exc).replace(s.linkmydeals_api_key, "REDACTED")[:400])
+
+
+if __name__ == "__main__":
+    diagnose()

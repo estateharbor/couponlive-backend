@@ -225,6 +225,8 @@ class SourceHealth(BaseModel):
     last_scraped_at: datetime | None
     last_success_at: datetime | None
     last_success_rate: float | None
+    last_error: str | None = None
+    last_error_at: datetime | None = None
 
 
 class HealthOut(BaseModel):

@@ -201,6 +201,29 @@ def diagnose() -> None:
         print("AUTH FAILED:", exc)
         return
     print("auth OK — token length:", len(token))
+    auth = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    # Your ad spaces ("websites") and how many coupons each can see. Coupons only
+    # appear for advertiser programmes the website has joined.
+    try:
+        w = sc.session.get(f"{sc.base}/websites/v2/", headers=auth,
+                           params={"limit": 20}, timeout=60)
+        print("websites HTTP", w.status_code)
+        sites = (w.json() or {}).get("results") or [] if w.ok else []
+        if not w.ok:
+            print("  ", w.text[:300])
+        for site in sites:
+            wid = site.get("id")
+            c = sc.session.get(f"{sc.base}/coupons/website/{wid}/", headers=auth,
+                               params={"limit": 1}, timeout=60)
+            n = ((c.json() or {}).get("_meta") or {}).get("count") if c.ok else f"HTTP {c.status_code}"
+            print(f"  website id={wid} name={site.get('name')!r} status={site.get('status')!r} "
+                  f"→ coupons visible: {n}")
+        if not sites:
+            print("  (no websites on this account — add/approve one in the Admitad dashboard)")
+        print("ADMITAD_WEBSITE_ID currently:", sc.website_id or "(not set)")
+    except Exception as exc:  # noqa: BLE001
+        print("websites lookup failed:", exc)
 
     print(f"GET {sc.coupons_url} (limit 3)")
     resp = sc.session.get(

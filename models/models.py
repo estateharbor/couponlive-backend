@@ -92,6 +92,10 @@ class Source(Base, TimestampMixin):
     # Incremental-feed cursor (e.g. LinkMyDeals last_extract unix timestamp).
     # Stored as text to stay source-agnostic; None => next run is a full pull.
     sync_cursor: Mapped[str | None] = mapped_column(String(64))
+    # Why the latest sync failed (exception / auth / empty feed), cleared by the
+    # next clean run — surfaced on /health so a dead feed isn't silent.
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     coupon_links: Mapped[list["CouponSource"]] = relationship(
         back_populates="source", cascade="all, delete-orphan"

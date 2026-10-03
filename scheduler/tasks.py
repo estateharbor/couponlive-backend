@@ -10,6 +10,8 @@ scheduler.validation, so it stays unit-testable without a broker.
 """
 from __future__ import annotations
 
+import functools
+import re
 from datetime import timedelta
 
 from celery.schedules import crontab
@@ -25,6 +27,65 @@ from scrapers.registry import get_scraper
 from validators.registry import get_validator
 
 log = get_logger("tasks")
+
+# /health is public: never let a credential from a request URL or response body
+# (LinkMyDeals puts API_KEY in the query string) reach a stored error message.
+_SECRET_RE = re.compile(
+    r"(?i)(\b(?:api[_-]?key|apikey|key|token|access_token|secret|client_secret|password)"
+    r"[\"']?\s*[=:]\s*[\"']?)[^&\s,'\"}]+"
+)
+
+
+def _redact(text: str) -> str:
+    return _SECRET_RE.sub(r"\1REDACTED", text)
+
+
+def _record_feed_outcome(source_name: str, error: str | None) -> None:
+    """Store (or clear) the feed's last error on its Source row for /health."""
+    from models.enums import IngestionMethod
+    from models.models import Source
+
+    session = get_sessionmaker()()
+    try:
+        src = session.scalar(select(Source).where(Source.name == source_name))
+        if src is None:
+            if error is None:
+                return
+            src = Source(name=source_name, ingestion_method=IngestionMethod.affiliate_api)
+            session.add(src)
+        if error:
+            src.last_error = _redact(error)[:500]
+            src.last_error_at = utcnow()
+        else:
+            src.last_error = None
+        session.commit()
+    except Exception as exc:  # bookkeeping must never mask the sync's own outcome
+        log.warning("feed.record_outcome_failed", source=source_name, error=str(exc))
+    finally:
+        session.close()
+
+
+def _tracked_feed(source_name: str):
+    """Record a feed sync's failure (exception, auth error, empty feed, missing
+    key) on its Source row, and clear it after a clean run. Re-raises exceptions
+    so Celery still marks the task failed."""
+    def deco(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            try:
+                result = fn(*args, **kwargs)
+            except Exception as exc:
+                log.exception("feed.sync_failed", source=source_name)
+                _record_feed_outcome(source_name, f"{type(exc).__name__}: {exc}")
+                raise
+            err = None
+            if isinstance(result, dict):
+                err = result.get("error") or (
+                    f"skipped: {result['skipped']}" if result.get("skipped") else None)
+            _record_feed_outcome(source_name, err)
+            return result
+        return wrapper
+    return deco
 
 
 @celery_app.task(name="scrape_source")
@@ -47,6 +108,7 @@ def scrape_source(source_name: str) -> dict:
 
 
 @celery_app.task(name="sync_linkmydeals")
+@_tracked_feed("LinkMyDeals")
 def sync_linkmydeals() -> dict:
     """Incremental LinkMyDeals sync: new/updated -> pipeline; suspended -> expired.
 
@@ -95,6 +157,7 @@ def sync_linkmydeals() -> dict:
 
 
 @celery_app.task(name="sync_cuelinks")
+@_tracked_feed("Cuelinks")
 def sync_cuelinks() -> dict:
     """Full pull of the Cuelinks Offers feed -> pipeline (codes + deals).
 
@@ -124,6 +187,7 @@ def sync_cuelinks() -> dict:
 
 
 @celery_app.task(name="sync_involve_asia")
+@_tracked_feed("Involve Asia")
 def sync_involve_asia() -> dict:
     """Full pull of the Involve Asia Offers feed -> pipeline (codes + deals).
 
@@ -160,6 +224,7 @@ def sync_involve_asia() -> dict:
 
 
 @celery_app.task(name="sync_vcommission")
+@_tracked_feed("vCommission")
 def sync_vcommission() -> dict:
     """Full pull of the vCommission (Trackier) coupons + deals -> pipeline.
 
@@ -188,6 +253,7 @@ def sync_vcommission() -> dict:
 
 
 @celery_app.task(name="sync_admitad")
+@_tracked_feed("Admitad")
 def sync_admitad() -> dict:
     """Full pull of the Admitad (Mitgo) coupons feed -> pipeline.
 
@@ -210,6 +276,13 @@ def sync_admitad() -> dict:
             return {"source": "Admitad", "error": "auth failed"}
 
         summary = ingest_raw(session, "Admitad", offers)
+        if not offers:
+            # Auth worked but nothing came back: the account has no joined
+            # advertiser programmes with coupons for this ad space (or needs
+            # ADMITAD_WEBSITE_ID). Surface it rather than look "healthy-but-empty".
+            return {"source": "Admitad", "error": (
+                "Admitad returned 0 coupons — join advertiser programmes in the "
+                "Admitad dashboard and/or set ADMITAD_WEBSITE_ID"), "raw": 0}
         return {"source": "Admitad", "created": summary.coupons_created,
                 "updated": summary.coupons_updated, "raw": summary.raw_count,
                 "errors": len(summary.errors),
@@ -219,6 +292,7 @@ def sync_admitad() -> dict:
 
 
 @celery_app.task(name="sync_feedico")
+@_tracked_feed("Feedico")
 def sync_feedico() -> dict:
     """Full pull of the Feedico coupon catalog -> pipeline (codes; discovery-only,
     no affiliate tracking link). Free tier is 1000 req/mo, so this runs on a slow
