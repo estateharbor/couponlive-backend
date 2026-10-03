@@ -46,9 +46,10 @@ PAGE0 = {
 
 
 class _FakeSession:
-    def __init__(self, token=TOKEN, pages=None):
+    def __init__(self, token=TOKEN, pages=None, websites=None):
         self.token = token
         self.pages = pages or {0: PAGE0}
+        self.websites = websites if websites is not None else []
         self.calls = []
 
     def post(self, url, data=None, headers=None, timeout=None):
@@ -57,6 +58,8 @@ class _FakeSession:
 
     def get(self, url, headers=None, params=None, timeout=None):
         self.calls.append(("GET", url, params, headers))
+        if "/websites/" in url:
+            return _FakeResp(self.websites)   # Admitad answers a bare list here
         return _FakeResp(self.pages.get((params or {}).get("offset", 0),
                                         {"results": [], "_meta": {"count": 3}}))
 
@@ -106,3 +109,35 @@ def test_website_id_scopes_coupons_url():
     s = AdmitadFeedScraper(client_id="c", client_secret="s", website_id="98765",
                            session=_FakeSession())
     assert s.coupons_url.endswith("/coupons/website/98765/")
+
+
+def test_auto_discovers_active_website_for_codes_and_links():
+    sites = [{"id": 111, "name": "old", "status": "suspended"},
+             {"id": 222, "name": "couponlive.in", "status": "active"}]
+    s = AdmitadFeedScraper(client_id="c", client_secret="s",
+                           session=_FakeSession(websites=sites))
+    out = s.scrape()
+    assert s.website_id == "222"
+    coupon_gets = [c for c in s.session.calls if c[0] == "GET" and "/coupons/" in c[1]]
+    assert coupon_gets and all(c[1].endswith("/coupons/website/222/") for c in coupon_gets)
+    assert out  # mapping still works on the website-scoped feed
+
+
+def test_no_websites_falls_back_to_bare_coupons_list():
+    s = AdmitadFeedScraper(client_id="c", client_secret="s", session=_FakeSession())
+    s.scrape()
+    assert s.website_id == ""
+    assert any(c[1].endswith("/coupons/") for c in s.session.calls if c[0] == "GET")
+
+
+def test_merchant_name_tags_stripped_and_end_date_mapped():
+    from datetime import datetime, timezone
+
+    page = {"results": [{"id": 9, "name": "Rs 2000 off", "promocode": "LAP2K",
+                         "status": "active", "campaign": {"name": "Acer [CPS] IN"},
+                         "goto_link": "https://ad.admitad.com/g/z/",
+                         "date_end": "2026-12-31 23:59:00"}],
+            "_meta": {"count": 1}}
+    out = _scraper(pages={0: page}).scrape()
+    assert out[0].merchant_name == "Acer"
+    assert out[0].expires_at == datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc)

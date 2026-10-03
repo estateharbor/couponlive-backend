@@ -36,6 +36,32 @@ from scrapers.linkmydeals_feed import _first
 log = get_logger("ingest.admitad")
 
 _TAG = re.compile(r"<[^>]+>")
+# Admitad campaign names carry programme tags + a country suffix:
+# "Acer [CPS] IN", "Myntra [CPS] India" -> "Acer", "Myntra".
+_BRACKETS = re.compile(r"\s*[\[(][^\])]*[\])]\s*")
+_COUNTRY_SUFFIX = re.compile(r"\s+(?:IN|INDIA|Global|WW)\s*$", re.IGNORECASE)
+
+
+def _merchant_name(raw: str) -> str:
+    name = _COUNTRY_SUFFIX.sub("", _BRACKETS.sub(" ", raw)).strip(" -|")
+    return re.sub(r"\s+", " ", name) or raw.strip()
+
+
+def _parse_end(value: Any) -> datetime | None:
+    """Admitad `date_end` ("2026-12-31 23:59:00" / ISO) -> aware UTC, else None."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace(" ", "T").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _results(payload: Any) -> list[dict]:
+    """Admitad list endpoints answer either {results:[...]} or a bare list."""
+    rows = payload.get("results") if isinstance(payload, dict) else payload
+    return [r for r in (rows or []) if isinstance(r, dict)]
 
 
 def _clean(value: Any) -> str:
@@ -86,10 +112,33 @@ class AdmitadFeedScraper(BaseScraper):
 
     @property
     def coupons_url(self) -> str:
-        # A website id scopes coupons + their goto_link to that ad space.
+        # A website id scopes coupons to that ad space — and only that endpoint
+        # returns `promocode` + `goto_link` (the commission link). The bare
+        # /coupons/ list has neither.
         if self.website_id:
             return f"{self.base}/coupons/website/{self.website_id}/"
         return f"{self.base}/coupons/"
+
+    def websites(self, token: str) -> list[dict]:
+        resp = self.session.get(
+            f"{self.base}/websites/v2/",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            params={"limit": 50}, timeout=60,
+        )
+        resp.raise_for_status()
+        return _results(resp.json())
+
+    def discover_website_id(self, token: str) -> str | None:
+        """Pick the account's ad space when ADMITAD_WEBSITE_ID isn't set: an
+        active one first, else the first listed."""
+        try:
+            sites = self.websites(token)
+        except Exception as exc:  # noqa: BLE001 — fall back to the bare list
+            log.warning("admitad.websites_failed", error=str(exc))
+            return None
+        active = [w for w in sites if str(w.get("status") or "").lower() == "active"]
+        pick = (active or sites or [None])[0]
+        return str(pick["id"]) if pick and pick.get("id") is not None else None
 
     # -- auth ----------------------------------------------------------------
     def authenticate(self) -> str:
@@ -124,6 +173,7 @@ class AdmitadFeedScraper(BaseScraper):
         ext = _first(it, "id", "coupon_id")
         if not merchant or ext in (None, ""):
             return None
+        merchant = _merchant_name(str(merchant))
         code = _first(it, "promocode", "promo_code", "coupon_code")
         name = _clean(_first(it, "name", "short_name"))
         description = _clean(_first(it, "description")) or name or f"{merchant} offer"
@@ -143,6 +193,7 @@ class AdmitadFeedScraper(BaseScraper):
             source_url=str(url).strip() if url else None,
             scraped_at=now,
             ingestion_method=self.ingestion_method,
+            expires_at=_parse_end(it.get("date_end")),
         )
 
     # -- fetch ---------------------------------------------------------------
@@ -155,12 +206,15 @@ class AdmitadFeedScraper(BaseScraper):
         )
         resp.raise_for_status()
         payload = resp.json() or {}
-        results = payload.get("results") or []
-        count = ((payload.get("_meta") or {}).get("count")) or 0
-        return [r for r in results if isinstance(r, dict)], int(count)
+        rows = _results(payload)
+        meta = payload.get("_meta") if isinstance(payload, dict) else None
+        count = ((meta or {}).get("count")) or len(rows)
+        return rows, int(count)
 
     def scrape(self) -> list[RawCoupon]:
         token = self.authenticate()  # raises MissingCredentials / AuthError
+        if not self.website_id:
+            self.website_id = self.discover_website_id(token) or ""
         log.info("admitad.fetch", url=self.coupons_url, limit=self.limit)
         now = datetime.now(timezone.utc)
         out: list[RawCoupon] = []
@@ -206,22 +260,21 @@ def diagnose() -> None:
     # Your ad spaces ("websites") and how many coupons each can see. Coupons only
     # appear for advertiser programmes the website has joined.
     try:
-        w = sc.session.get(f"{sc.base}/websites/v2/", headers=auth,
-                           params={"limit": 20}, timeout=60)
-        print("websites HTTP", w.status_code)
-        sites = (w.json() or {}).get("results") or [] if w.ok else []
-        if not w.ok:
-            print("  ", w.text[:300])
+        sites = sc.websites(token)
+        print("websites on account:", len(sites))
         for site in sites:
             wid = site.get("id")
             c = sc.session.get(f"{sc.base}/coupons/website/{wid}/", headers=auth,
                                params={"limit": 1}, timeout=60)
             n = ((c.json() or {}).get("_meta") or {}).get("count") if c.ok else f"HTTP {c.status_code}"
             print(f"  website id={wid} name={site.get('name')!r} status={site.get('status')!r} "
-                  f"→ coupons visible: {n}")
+                  f"-> coupons visible: {n}")
         if not sites:
             print("  (no websites on this account — add/approve one in the Admitad dashboard)")
         print("ADMITAD_WEBSITE_ID currently:", sc.website_id or "(not set)")
+        if not sc.website_id:
+            sc.website_id = sc.discover_website_id(token) or ""
+            print("auto-selected website id:", sc.website_id or "(none)")
     except Exception as exc:  # noqa: BLE001
         print("websites lookup failed:", exc)
 
