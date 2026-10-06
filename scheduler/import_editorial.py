@@ -166,6 +166,13 @@ _AGGREGATOR_HOSTS = ("grabon", "desidime", "couponzguru", "coupondunia", "cashka
                      "linksredirect", "admitad", "tjzuh", "vcommission", "cuelinks")
 
 
+def _paytm_travel(store: str, cat: str) -> bool:
+    """Paytm also sells bus/train/flight tickets itself, so a Paytm TRAVEL
+    booking code (e.g. OCTFEST on bus tickets) is a real merchant offer. Its
+    wallet/UPI/recharge cashback, and "Paytm × X" / "via Paytm" combos, stay out."""
+    return cat == "travel" and store in ("paytm", "paytm travel", "paytm bus")
+
+
 def _keep(row: dict) -> str | None:
     """Return 'code' | 'deal' for rows to import, else None (skip)."""
     cat = (row.get("category") or "").strip().lower()
@@ -173,7 +180,7 @@ def _keep(row: dict) -> str | None:
     store = (row.get("store") or "").strip().lower()
     if cat == "ai":
         return None  # free-trials handled in seed_trials.py
-    if any(mark in store for mark in _SKIP_STORE_MARKERS):
+    if any(mark in store for mark in _SKIP_STORE_MARKERS) and not _paytm_travel(store, cat):
         return None  # wallet/bank intermediaries (PhonePe/CRED/Paytm/"via" combos)
     if code_type == "code" and (row.get("code") or "").strip():
         return "code"

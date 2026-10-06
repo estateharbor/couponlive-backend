@@ -59,6 +59,9 @@ If you cannot confirm it on an official page, DROP it. Example from real life:
 an aggregator listed Goibibo `FESTIVE`, but Goibibo's own page said "This offer
 has expired" — it must not be published.
 
+Exception: Paytm's own TRAVEL booking codes (bus/train/flight tickets sold on
+Paytm, e.g. `OCTFEST`) are allowed — use `store=Paytm`, `category=travel`.
+
 Skip: wallet/UPI-only cashback (PhonePe/CRED/Paytm/Amazon Pay as the merchant),
 member-only reward programmes, paid plans that aren't a trial/discount, and
 anything requiring a login to even see.

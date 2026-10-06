@@ -67,3 +67,11 @@ def test_trial_ends_column_sets_end_date(tmp_path):
     rows, problems = st.load_trial_csv(p, list(st.SEED))
     assert not problems
     assert rows[0]["expires_at"] is not None and rows[0]["expires_at"].day == 18
+
+
+def test_paytm_allowed_for_travel_codes_only():
+    base = {"code_type": "code", "code": "OCTFEST"}
+    assert ie._keep({**base, "store": "Paytm", "category": "travel"}) == "code"
+    assert ie._keep({**base, "store": "Paytm", "category": "upi"}) is None
+    assert ie._keep({**base, "store": "Paytm × Zomato", "category": "travel"}) is None
+    assert ie._keep({**base, "store": "PhonePe", "category": "travel"}) is None
