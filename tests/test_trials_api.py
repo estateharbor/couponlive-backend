@@ -98,3 +98,20 @@ def test_card_required_null_renders_as_unknown(client):
     cards = client.get("/trials").json()
     # (all seeded offers set a value; assert the field is present and typed)
     assert all("card_required" in c for c in cards)
+
+
+def test_offer_past_its_end_date_is_hidden(client, db_session):
+    from datetime import timedelta
+
+    canva = db_session.query(Tool).filter_by(slug="canva-pro").one()
+    db_session.add_all([
+        TrialOffer(tool_id=canva.id, offer_type=TrialOfferType.card_trial,
+                   title="Ended promo", signup_url="https://canva.com/x",
+                   expires_at=_now() - timedelta(days=1), status=TrialStatus.live),
+        TrialOffer(tool_id=canva.id, offer_type=TrialOfferType.card_trial,
+                   title="Running promo", signup_url="https://canva.com/y",
+                   expires_at=_now() + timedelta(days=5), status=TrialStatus.live),
+    ])
+    db_session.commit()
+    titles = {t["title"] for t in client.get("/trials").json()}
+    assert "Running promo" in titles and "Ended promo" not in titles

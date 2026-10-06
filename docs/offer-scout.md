@@ -100,8 +100,11 @@ Quote any cell containing commas, quotes or newlines (standard CSV).
 Create ONE new file: `data/editorial/trials/scout-YYYY-MM-DD-HHMM.csv`, header:
 
 ```
-name,slug,vendor,category,ai,website,pricing,offer_type,title,trial_days,card_required,india_available,eligibility,renew_inr,renew_usd,renew_period,credit_amount,credit_currency,signup_url
+name,slug,vendor,category,ai,website,pricing,offer_type,title,trial_days,card_required,india_available,eligibility,renew_inr,renew_usd,renew_period,credit_amount,credit_currency,signup_url,ends
 ```
+
+- `ends`: ONLY when the official page states an end date (`18 Oct 2026`); the
+  offer then drops off the site after that day. Otherwise leave it empty.
 
 - `slug`: reuse the existing slug if the tool is already listed (its name and
   website are kept automatically); otherwise a new lowercase slug.

@@ -57,3 +57,13 @@ def test_trial_csv_parses_and_keeps_existing_tool_fields(tmp_path):
     assert vercel["credit_amount"] == 5000.0 and vercel["card_required"] is False
     nt = next(r for r in rows if r["slug"] == "newtool")
     assert nt["offer_type"] is TrialOfferType.lifetime_free_tier and nt["ai"] is True
+
+
+def test_trial_ends_column_sets_end_date(tmp_path):
+    p = tmp_path / "t.csv"
+    p.write_text(TRIAL_HEADER.rstrip("\n") + ",ends\n" +
+        "Newtool,newtool,NT,ai,true,https://newtool.ai,,card_trial,Newtool $1 first month,,"
+        "true,,,,,,,,https://newtool.ai/pricing,18 Oct 2026\n", encoding="utf-8")
+    rows, problems = st.load_trial_csv(p, list(st.SEED))
+    assert not problems
+    assert rows[0]["expires_at"] is not None and rows[0]["expires_at"].day == 18

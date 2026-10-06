@@ -80,6 +80,8 @@ def list_trials(
             TrialOffer.status == TrialStatus.live,
             Tool.status == TrialStatus.live,
             TrialOffer.verification_status.not_in(_HIDDEN),
+            # An offer past its stated end date drops off the list by itself.
+            or_(TrialOffer.expires_at.is_(None), TrialOffer.expires_at >= utcnow()),
         )
     )
     if q:

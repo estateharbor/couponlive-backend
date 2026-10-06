@@ -437,7 +437,7 @@ TRIALS_DIR = Path("data/editorial/trials")
 TRIAL_COLUMNS = ("name", "slug", "vendor", "category", "ai", "website", "pricing",
                  "offer_type", "title", "trial_days", "card_required", "india_available",
                  "eligibility", "renew_inr", "renew_usd", "renew_period", "credit_amount",
-                 "credit_currency", "signup_url")
+                 "credit_currency", "signup_url", "ends")
 _TOOL_FIELDS = ("name", "vendor", "category", "ai", "website", "pricing")
 
 
@@ -449,6 +449,14 @@ def _bool(v: str) -> bool | None:
 def _num(v: str, cast):
     v = (v or "").strip().replace(",", "")
     return cast(v) if v else None
+
+
+def _parse_ends(text: str):
+    """Optional `ends` column: same plain-date formats as coupon CSVs
+    ("18 Oct 2026") -> end of that day IST; anything else -> no end date."""
+    from scheduler.import_editorial import _parse_expiry
+
+    return _parse_expiry(text or "")
 
 
 def load_trial_csv(path: Path, existing: list[dict]) -> tuple[list[dict], list[str]]:
@@ -496,6 +504,7 @@ def load_trial_csv(path: Path, existing: list[dict]) -> tuple[list[dict], list[s
                     credit_amount=_num(r.get("credit_amount", ""), float),
                     credit_currency=(r.get("credit_currency") or "").strip() or None,
                     signup_url=signup,
+                    expires_at=_parse_ends(r.get("ends", "")),
                 )
             except ValueError as exc:
                 problems.append(f"{where}: {exc}")
@@ -575,6 +584,7 @@ def main() -> None:
             offer.renew_period = row.get("renew_period")
             offer.credit_amount = row.get("credit_amount")
             offer.credit_currency = row.get("credit_currency")
+            offer.expires_at = row.get("expires_at")
             offer.signup_url = row["signup_url"]
             offer.source = "manual"
             offer.source_url = row.get("website")
