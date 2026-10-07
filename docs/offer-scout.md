@@ -34,6 +34,49 @@ Use web search for current Indian offers. Good places to look:
 Aim for quality: 5–20 verified new items per run is great; 0 is fine on a quiet
 day. Never pad.
 
+### 2a. Sweep these every run (highest yield)
+
+Don't stop after one or two stores. Work through ALL of these each run:
+
+- **Travel bank-offer pages** — each lists many card codes with full T&Cs and
+  end dates. Open them in the built-in browser; from the listing page you can
+  `fetch()` the same-origin detail pages and parse them with `DOMParser`
+  instead of navigating one by one:
+  - MakeMyTrip: https://www.makemytrip.com/offers/ → detail pages under
+    `/promos/*.html` (card elements carry `data-cy-url`).
+  - Cleartrip: https://www.cleartrip.com/all-offers/ → `/all-offers/<slug>/`.
+    Many old slugs are stale or 404 — check the booking period and year.
+  - ixigo: https://www.ixigo.com/offers → `/offers/...` and `/offers/campaigns/...`.
+  - Goibibo: https://www.goibibo.com/offers/
+  - AbhiBus: https://www.abhibus.com/bus-ticket-offers — the codes appear
+    only after you click each card's "View Details".
+  - redBus: https://www.redbus.in/offers
+  - IndiGo: https://www.goindigo.in/offers.html (decline the cookie banner;
+    each campaign has its own T&C page).
+  - Also try Yatra, EaseMyTrip, Akasa Air, Air India Express — these often
+    block or don't render; skip them if the page is empty.
+- **Food:** Domino's, Pizza Hut, KFC, Burger King, Swiggy, Zomato offer pages.
+- **Fashion / beauty / D2C homepages** — codes often sit in the top announcement
+  bar or hero banners (e.g. Mamaearth `B1G1`). Scan visible text for
+  "code / coupon / use / flat / extra / free": Myntra, AJIO, Nykaa, Mamaearth,
+  SUGAR, Libas, Biba, Neeman's, Lenskart, Bewakoof, Beyoung, The Souled Store,
+  Purplle, FirstCry, Wakefit, Pepperfry, Urban Ladder.
+- **Electronics:** Croma, Reliance Digital, Vijay Sales, boAt, Noise, Lenovo,
+  HP, Dell, Samsung, OnePlus, realme.
+
+### 2b. Add trending stores (traffic)
+
+Each run, do one or two web searches for what's trending in India right now
+(e.g. "<month> <year> sale calendar India", "Diwali sale <year> brands",
+current festival/sale names). Note the stores in the news that we don't list
+yet, check their OFFICIAL pages, and publish anything verified. New stores need
+`merchant_home`. Big events (Amazon Great Indian Festival, Flipkart Big Billion
+Days, Myntra BFF, AJIO sales, Diwali/Dhanteras) are worth covering on the
+merchant's own sale page as they start.
+
+Many D2C brands only show codes in the cart or after login — if no official
+page shows the code, DROP it (don't fall back to aggregators).
+
 ## 3. Verify every item on the official page (mandatory)
 
 Open the merchant's / vendor's OWN page. Big Indian store sites block cloud
@@ -54,6 +97,10 @@ T&C, help centre, press release on the company's domain. Confirm from that page:
 - eligibility (new users, app-only, specific bank card…),
 - that it is NOT marked expired. If the page says "expired", "ended", "this
   offer has expired", or shows a past end date → DROP it.
+
+An offer that hasn't started yet: publish it only if it starts within the next
+day AND the headline says when it starts ("— from 8 Oct"); otherwise skip it
+until a later run.
 
 If you cannot confirm it on an official page, DROP it. Example from real life:
 an aggregator listed Goibibo `FESTIVE`, but Goibibo's own page said "This offer
