@@ -68,6 +68,45 @@ def test_deals_exclude_coded_and_expired(client):
     assert "Old deal" not in refs              # expired excluded
 
 
+def test_editorial_deals_rank_before_newer_feed_deals(db_session):
+    from datetime import timedelta
+
+    from scheduler.import_editorial import SOURCE_NAME
+
+    ajio = Merchant(name="AJIO", normalized_name="ajio")
+    db_session.add(ajio)
+    feed = Source(name="vCommission", ingestion_method=IngestionMethod.affiliate_api)
+    editorial = Source(name=SOURCE_NAME, ingestion_method=IngestionMethod.affiliate_api)
+    db_session.add_all([feed, editorial])
+    db_session.flush()
+
+    old = _now() - timedelta(days=2)
+    bank = Coupon(merchant_id=ajio.id, code=None, external_ref="bank",
+                  description="10% off with HSBC cards", status=CouponStatus.unverified,
+                  first_seen=old, last_seen=old)
+    feed_deals = [
+        Coupon(merchant_id=ajio.id, code=None, external_ref=f"f{i}",
+               description=f"Feed deal {i}", status=CouponStatus.unverified,
+               first_seen=_now(), last_seen=_now())
+        for i in range(3)
+    ]
+    db_session.add_all([bank, *feed_deals])
+    db_session.flush()
+    db_session.add(CouponSource(coupon_id=bank.id, source_id=editorial.id,
+                                first_seen_at=old, last_seen_at=old))
+    for d in feed_deals:
+        db_session.add(CouponSource(coupon_id=d.id, source_id=feed.id,
+                                    first_seen_at=_now(), last_seen_at=_now()))
+    db_session.commit()
+
+    app = create_app()
+    app.dependency_overrides[get_db] = lambda: db_session
+    body = TestClient(app).get("/deals", params={"merchant": "ajio", "limit": 2}).json()
+    # The older editorial deal leads even though every feed deal is newer.
+    assert body[0]["description"] == "10% off with HSBC cards"
+    assert len(body) == 2
+
+
 def test_deals_merchant_filter(client):
     amazon = {d["merchant_name"] for d in client.get("/deals", params={"merchant": "amazon"}).json()}
     assert amazon == {"Amazon"}                # Flipkart deal filtered out
