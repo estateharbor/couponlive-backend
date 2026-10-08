@@ -1,0 +1,3 @@
+name,slug,vendor,category,ai,website,pricing,offer_type,title,trial_days,card_required,india_available,eligibility,renew_inr,renew_usd,renew_period,credit_amount,credit_currency,signup_url,ends
+Zapier,zapier,Zapier,productivity,true,https://zapier.com,https://zapier.com/pricing,no_card_trial,Zapier — 14-day free trial of Professional (no card),14,false,,New Zapier accounts; the free plan (100 tasks/month) continues after the trial,,29.99,month,,,https://zapier.com/pricing,
+Loom,loom,Atlassian,productivity,true,https://www.loom.com,https://www.loom.com/pricing,freemium_premium_trial,Loom — 14-day free trial of Business + AI,14,,,"New Loom workspaces; free Starter plan (25 videos, 5-minute recordings) available after the trial",,18,month,,,https://www.loom.com/pricing,
