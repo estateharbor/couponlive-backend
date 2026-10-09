@@ -1,0 +1,2 @@
+name,slug,vendor,category,ai,website,pricing,offer_type,title,trial_days,card_required,india_available,eligibility,renew_inr,renew_usd,renew_period,credit_amount,credit_currency,signup_url,ends
+X API,x-api,X Corp,developer-cloud,true,https://docs.x.com,,ai_credits,X API — up to $70 free credits for new pay-per-use accounts,,true,,"New pay-per-use accounts: $20 when you save your first eligible card + a one-time match of your first auto-recharge up to $50; prepaid cards excluded; credits expire 3 months after grant",,,,70,USD,https://docs.x.com/changelog,

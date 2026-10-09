@@ -306,9 +306,10 @@ SEED: list[dict] = [
          signup_url="https://linear.app/startups"),
     dict(name="Anthropic API", slug="anthropic-api", vendor="Anthropic", category="developer-cloud",
          ai=True, website="https://platform.claude.com", offer_type=T.startup_credit,
-         title="Claude for Startups — free API credits + priority rate limits",
-         card_required=False,
-         eligibility="Institutional equity funding; founded <4 yrs; first-party Claude API (Console) only",
+         title="Claude for Startups — free year of Claude Team + $1,000 API credit",
+         card_required=False, credit_amount=1000, credit_currency="USD",
+         eligibility="Founded in the last 5 years or funded in the last 2; application-based; "
+                     "Team year (up to 5 Premium seats) for companies new to Team",
          signup_url="https://claude.com/programs/startups"),
     dict(name="Firecrawl", slug="firecrawl", vendor="Firecrawl", category="developer-cloud",
          ai=True, website="https://www.firecrawl.dev", pricing="https://www.firecrawl.dev/pricing",
@@ -398,6 +399,7 @@ RETIRE: list[tuple[str, str]] = [
     ("cursor", "Cursor Pro trial"),                                       # Pro 14-day trial removed 2026
     ("github-copilot", "GitHub Copilot — 30-day free trial"),             # replaced by free plan
     ("elevenlabs", "ElevenLabs free tier — no card"),                    # replaced by char-quota title
+    ("anthropic-api", "Claude for Startups — free API credits + priority rate limits"),  # programme expanded 6 Oct 2026
 ]
 
 
